@@ -1,0 +1,13 @@
+# Node modules (frontend)
+hr_frontend/node_modules/
+hr_frontend/build/
+
+# Python virtual environment (backend)
+hr_backend/venv/
+hr_backend/__pycache__/
+hr_backend/.env
+hr_backend/*.pyc
+
+# Common
+*.log
+.DS_Store
