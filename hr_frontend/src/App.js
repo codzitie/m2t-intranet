@@ -1,7 +1,12 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { UserProvider } from "./context/UserContext";
 import Header from "./components/Header";
 import HomePage from "./components/HomePage";
+import LeaveDashboard from "./components/LeaveDashboard"; // Add this import
+import RoleSwitcher from "./components/RoleSwitcher";
+import LeaveCalendar from "./components/LeaveCalendar";
+
 
 function PlaceholderPage({ title }) {
   return (
@@ -12,21 +17,31 @@ function PlaceholderPage({ title }) {
   );
 }
 
+
 function App() {
   return (
-    <Router>
-      <div style={{ backgroundColor: "white", minHeight: "100vh" }}>
-        <Header />
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/attendance" element={<PlaceholderPage title="Attendance & Daily Timesheet System" />} />
-          <Route path="/leave" element={<PlaceholderPage title="Leave Application & Approval System" />} />
-          <Route path="/policy" element={<PlaceholderPage title="HR Policy Repository" />} />
-          <Route path="/security" element={<PlaceholderPage title="Security & Access" />} />
-        </Routes>
-      </div>
-    </Router>
+    <UserProvider>
+      <Router>
+        <div style={{ backgroundColor: "white", minHeight: "100vh" }}>
+          <Header />
+          <Routes>
+  <Route path="/" element={<HomePage />} />
+  <Route path="/attendance" element={<PlaceholderPage title="Attendance & Daily Timesheet System" />} />
+  <Route path="/leave" element={<LeaveDashboard />} />
+  <Route path="/leave/calendar" element={<LeaveCalendar />} />
+  <Route path="/policy" element={<PlaceholderPage title="HR Policy Repository" />} />
+  <Route path="/security" element={<PlaceholderPage title="Security & Access" />} />
+</Routes>
+
+          
+          {/* Role Switcher for Testing */}
+          <RoleSwitcher />
+        </div>
+      </Router>
+    </UserProvider>
   );
 }
+
+
 
 export default App;
