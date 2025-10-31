@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { LeaveService } from '../services/mockLeaveService';
+import * as api from '../services/api';
 import ApplyLeaveForm from './ApplyLeaveForm';
 import LeaveHistory from './LeaveHistory';
 import SupervisorDashboard from './SupervisorDashboard';
@@ -17,6 +17,7 @@ function LeaveDashboard() {
   const [showLeaveHistory, setShowLeaveHistory] = useState(false);
   const [showSupervisorView, setShowSupervisorView] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -27,29 +28,34 @@ function LeaveDashboard() {
 
   const loadLeaveBalance = async () => {
     try {
+      setLoading(true);
+      setError('');
+
       const requests = [
-        LeaveService.getLeaveBalance(user.id),
-        LeaveService.getLeaveHistory(user.id),
+        api.getLeaveBalance(),
+        api.getLeaveHistory(),
       ];
 
       // If user has supervisor permissions, also fetch pending approvals
       if (user.permissions.includes('approve_team_leaves')) {
-        requests.push(LeaveService.getPendingApprovals(user.id));
+        requests.push(api.getPendingApprovals());
       }
 
       const responses = await Promise.all(requests);
 
-      if (responses[0].success) {
-        setLeaveBalance(responses[0].data);
-      }
-      if (responses[1].success) {
-        setRecentLeaves(responses[1].data.slice(0, 3));
-      }
-      if (responses[2] && responses[2].success) {
-        setPendingApprovalsCount(responses[2].data.length);
+      // Handle leave balance
+      setLeaveBalance(responses[0] || []);
+
+      // Handle leave history
+      setRecentLeaves((responses[1] || []).slice(0, 3));
+
+      // Handle pending approvals
+      if (responses[2]) {
+        setPendingApprovalsCount(responses[2].length);
       }
     } catch (error) {
       console.error('Error loading leave data:', error);
+      setError('Failed to load leave data. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -221,8 +227,25 @@ function LeaveDashboard() {
     color: '#666',
   };
 
+  const errorStyle = {
+    backgroundColor: '#FEE2E2',
+    border: '1px solid #FECACA',
+    color: '#991B1B',
+    padding: '12px',
+    borderRadius: '6px',
+    marginBottom: '20px',
+  };
+
   // Check if user is loaded from context
-  if (!user || loading) {
+  if (!user) {
+    return (
+      <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>
+        Please log in to view your leave information
+      </div>
+    );
+  }
+
+  if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>
         Loading your leave information...
@@ -232,6 +255,9 @@ function LeaveDashboard() {
 
   return (
     <div style={containerStyle}>
+      {/* Error Message */}
+      {error && <div style={errorStyle}>{error}</div>}
+
       {/* Header Section */}
       <div style={headerStyle}>
         <h1 style={titleStyle}>Welcome, {user.name}!</h1>
@@ -242,7 +268,7 @@ function LeaveDashboard() {
       <div style={balanceGridStyle}>
         {leaveBalance.map((leave) => (
           <div
-            key={leave.leaveTypeId}
+            key={leave.leave_type_id}
             style={balanceCardStyle}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
@@ -253,7 +279,7 @@ function LeaveDashboard() {
               e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
             }}
           >
-            <div style={leaveTypeStyle}>{leave.leaveType}</div>
+            <div style={leaveTypeStyle}>{leave.leave_type}</div>
             <div style={leaveCountStyle}>{leave.remaining}</div>
             <div style={leaveDetailsStyle}>
               Available • Used: {leave.used}/{leave.total}
@@ -314,7 +340,7 @@ function LeaveDashboard() {
         )}
       </div>
 
-      {/* Supervisor/HR Section - Only show if user has approval or HR permissions */}
+      {/* Supervisor/HR Section */}
       {(user.permissions.includes('approve_team_leaves') || user.permissions.includes('manage_hr')) && (
         <>
           <div style={{ 
@@ -393,7 +419,7 @@ function LeaveDashboard() {
             </div>
           )}
 
-          {/* Supervisor Approvals Button (only if not HR or if HR wants to see team approvals) */}
+          {/* Supervisor Approvals Button */}
           {user.permissions.includes('approve_team_leaves') && !user.permissions.includes('manage_hr') && (
             <div style={{
               backgroundColor: 'white',
@@ -502,10 +528,10 @@ function LeaveDashboard() {
                   <div key={leave.id} style={leaveItemStyle}>
                     <div style={leaveInfoStyle}>
                       <div style={leaveTitleStyle}>
-                        {leave.leaveType} • {leave.days} {leave.days === 1 ? 'day' : 'days'}
+                        {leave.leave_type} • {leave.days} {leave.days === 1 ? 'day' : 'days'}
                       </div>
                       <div style={leaveDateStyle}>
-                        {leave.startDate} to {leave.endDate}
+                        {leave.start_date} to {leave.end_date}
                       </div>
                     </div>
                     <div>

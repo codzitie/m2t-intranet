@@ -1,12 +1,12 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { UserProvider } from "./context/UserContext";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { UserProvider, useUser } from "./context/UserContext";
 import Header from "./components/Header";
 import HomePage from "./components/HomePage";
-import LeaveDashboard from "./components/LeaveDashboard"; // Add this import
-import RoleSwitcher from "./components/RoleSwitcher";
+import LeaveDashboard from "./components/LeaveDashboard";
 import LeaveCalendar from "./components/LeaveCalendar";
-
+import LoginPage from './components/LoginPage';
+import RoleSwitcher from "./components/RoleSwitcher";
 
 function PlaceholderPage({ title }) {
   return (
@@ -17,31 +17,110 @@ function PlaceholderPage({ title }) {
   );
 }
 
+// Protected Route Component
+function ProtectedRoute({ children }) {
+  const { isAuthenticated, loading } = useUser();
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "100px", fontSize: "18px", color: "#666" }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
+function AppRoutes() {
+  const { isAuthenticated } = useUser();
+
+  return (
+    <div style={{ backgroundColor: "white", minHeight: "100vh" }}>
+      {/* Show Header only if authenticated */}
+      {isAuthenticated && <Header />}
+      
+      <Routes>
+        {/* Login Route - Always accessible */}
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Protected Routes */}
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute>
+              <HomePage />
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/leave" 
+          element={
+            <ProtectedRoute>
+              <LeaveDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/leave/calendar" 
+          element={
+            <ProtectedRoute>
+              <LeaveCalendar />
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/attendance" 
+          element={
+            <ProtectedRoute>
+              <PlaceholderPage title="Attendance & Daily Timesheet System" />
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/policy" 
+          element={
+            <ProtectedRoute>
+              <PlaceholderPage title="HR Policy Repository" />
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/security" 
+          element={
+            <ProtectedRoute>
+              <PlaceholderPage title="Security & Access" />
+            </ProtectedRoute>
+          } 
+        />
+
+        {/* Catch all - redirect to login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+
+      {/* Role Switcher for Testing */}
+      {isAuthenticated && <RoleSwitcher />}
+    </div>
+  );
+}
 
 function App() {
   return (
     <UserProvider>
       <Router>
-        <div style={{ backgroundColor: "white", minHeight: "100vh" }}>
-          <Header />
-          <Routes>
-  <Route path="/" element={<HomePage />} />
-  <Route path="/attendance" element={<PlaceholderPage title="Attendance & Daily Timesheet System" />} />
-  <Route path="/leave" element={<LeaveDashboard />} />
-  <Route path="/leave/calendar" element={<LeaveCalendar />} />
-  <Route path="/policy" element={<PlaceholderPage title="HR Policy Repository" />} />
-  <Route path="/security" element={<PlaceholderPage title="Security & Access" />} />
-</Routes>
-
-          
-          {/* Role Switcher for Testing */}
-          <RoleSwitcher />
-        </div>
+        <AppRoutes />
       </Router>
     </UserProvider>
   );
 }
-
-
 
 export default App;

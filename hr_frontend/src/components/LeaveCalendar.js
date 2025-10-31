@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LeaveService } from '../services/mockLeaveService';
+import * as api from '../services/api';
 
 function LeaveCalendar() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -13,14 +13,16 @@ function LeaveCalendar() {
 
   const loadLeaveData = async () => {
     try {
-      const response = await LeaveService.getAllLeaveRequests();
-      if (response.success) {
+      setLoading(true);
+      const response = await api.getAllLeaves();
+      if (response) {
         // Filter only approved leaves
-        const approvedLeaves = response.data.filter(leave => leave.status === 'Approved');
+        const approvedLeaves = response.filter(leave => leave.status === 'Approved');
         setLeaveData(approvedLeaves);
       }
     } catch (error) {
       console.error('Error loading calendar data:', error);
+      alert('Failed to load calendar data');
     } finally {
       setLoading(false);
     }
@@ -40,7 +42,7 @@ function LeaveCalendar() {
   const getLeavesForDate = (date) => {
     const dateStr = date.toISOString().split('T')[0];
     return leaveData.filter(leave => {
-      return leave.startDate <= dateStr && leave.endDate >= dateStr;
+      return leave.start_date <= dateStr && leave.end_date >= dateStr;
     });
   };
 
@@ -272,10 +274,10 @@ function LeaveCalendar() {
                 {leavesOnDate.slice(0, 3).map((leave, idx) => (
                   <div
                     key={idx}
-                    style={leaveIndicatorStyle(getLeaveTypeColor(leave.leaveType))}
-                    title={`${leave.employeeName} - ${leave.leaveType}`}
+                    style={leaveIndicatorStyle(getLeaveTypeColor(leave.leave_type))}
+                    title={`${leave.employee_name} - ${leave.leave_type}`}
                   >
-                    {leave.employeeName.split(' ')[0]}
+                    {leave.employee_name.split(' ')[0]}
                   </div>
                 ))}
                 {leavesOnDate.length > 3 && (

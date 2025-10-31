@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
-import { LeaveService } from '../services/mockLeaveService';
+import * as api from '../services/api';
 
 function SupervisorDashboard({ onApprovalComplete }) {
   const { user } = useUser();
@@ -19,12 +19,13 @@ function SupervisorDashboard({ onApprovalComplete }) {
 
   const loadPendingApprovals = async () => {
     try {
-      const response = await LeaveService.getPendingApprovals(user.id);
-      if (response.success) {
-        setPendingApprovals(response.data);
+      const response = await api.getPendingApprovals();
+      if (response) {
+        setPendingApprovals(response || []);
       }
     } catch (error) {
       console.error('Error loading pending approvals:', error);
+      alert('Failed to load pending approvals');
     } finally {
       setLoading(false);
     }
@@ -55,26 +56,21 @@ function SupervisorDashboard({ onApprovalComplete }) {
     try {
       let response;
       if (actionType === 'approve') {
-        response = await LeaveService.approveLeave(selectedLeave.id, remarks);
+        response = await api.approveLeave(selectedLeave.id, remarks);
       } else {
-        response = await LeaveService.rejectLeave(selectedLeave.id, remarks);
+        response = await api.rejectLeave(selectedLeave.id, remarks);
       }
 
-      if (response.success) {
-  alert(`✅ Leave ${actionType === 'approve' ? 'approved' : 'rejected'} successfully!`);
-  setShowApprovalModal(false);
-  setSelectedLeave(null);
-  setRemarks('');
-  loadPendingApprovals(); // Reload the list
-  if (onApprovalComplete) {
-    onApprovalComplete(); // Notify parent to refresh count
-  }
-} else {
-  alert('❌ ' + response.error);
-}
-
+      alert(`✅ Leave ${actionType === 'approve' ? 'approved' : 'rejected'} successfully!`);
+      setShowApprovalModal(false);
+      setSelectedLeave(null);
+      setRemarks('');
+      loadPendingApprovals(); // Reload the list
+      if (onApprovalComplete) {
+        onApprovalComplete(); // Notify parent to refresh count
+      }
     } catch (error) {
-      alert('❌ Error processing request');
+      alert('❌ ' + (error.response?.data?.detail || 'Error processing request'));
       console.error(error);
     } finally {
       setSubmitting(false);
@@ -315,22 +311,22 @@ function SupervisorDashboard({ onApprovalComplete }) {
           <div key={leave.id} style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <div style={employeeNameStyle}>{leave.employeeName}</div>
-                <div style={leaveTypeStyle}>{leave.leaveType}</div>
+                <div style={employeeNameStyle}>{leave.employee_name}</div>
+                <div style={leaveTypeStyle}>{leave.leave_type}</div>
               </div>
               <div style={{ fontSize: '12px', color: '#888' }}>
-                Applied on {leave.appliedOn}
+                Applied on {leave.applied_on}
               </div>
             </div>
 
             <div style={leaveDetailsStyle}>
               <div style={detailItemStyle}>
                 <div style={detailLabelStyle}>From Date</div>
-                <div style={detailValueStyle}>{leave.startDate}</div>
+                <div style={detailValueStyle}>{leave.start_date}</div>
               </div>
               <div style={detailItemStyle}>
                 <div style={detailLabelStyle}>To Date</div>
-                <div style={detailValueStyle}>{leave.endDate}</div>
+                <div style={detailValueStyle}>{leave.end_date}</div>
               </div>
               <div style={detailItemStyle}>
                 <div style={detailLabelStyle}>Duration</div>
@@ -369,8 +365,8 @@ function SupervisorDashboard({ onApprovalComplete }) {
             </h2>
             
             <div style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
-              <strong>{selectedLeave.employeeName}</strong> - {selectedLeave.leaveType}<br />
-              {selectedLeave.startDate} to {selectedLeave.endDate} ({selectedLeave.days} days)
+              <strong>{selectedLeave.employee_name}</strong> - {selectedLeave.leave_type}<br />
+              {selectedLeave.start_date} to {selectedLeave.end_date} ({selectedLeave.days} days)
             </div>
 
             <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>

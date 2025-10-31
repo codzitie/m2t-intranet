@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
-import { LeaveService } from '../services/mockLeaveService';
+import * as api from '../services/api';
 
 function ApplyLeaveForm({ onClose, onSuccess }) {
   const { user } = useUser();
@@ -22,19 +22,16 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
 
   const loadInitialData = async () => {
     try {
-      const [typesResponse, balanceResponse] = await Promise.all([
-        LeaveService.getLeaveTypes(),
-        LeaveService.getLeaveBalance(user.id),
+      const [types, balance] = await Promise.all([
+        api.getLeaveTypes(),
+        api.getLeaveBalance(),
       ]);
 
-      if (typesResponse.success) {
-        setLeaveTypes(typesResponse.data);
-      }
-      if (balanceResponse.success) {
-        setLeaveBalance(balanceResponse.data);
-      }
+      setLeaveTypes(types || []);
+      setLeaveBalance(balance || []);
     } catch (error) {
       console.error('Error loading data:', error);
+      alert('Failed to load leave types and balance');
     }
   };
 
@@ -83,23 +80,18 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
     setSubmitting(true);
 
     try {
-      const response = await LeaveService.applyLeave({
-        employeeId: user.id,
+      const response = await api.applyLeave({
         leaveTypeId: parseInt(formData.leaveTypeId),
         startDate: formData.startDate,
         endDate: formData.endDate,
         reason: formData.reason,
       });
 
-      if (response.success) {
-        alert('✅ Leave application submitted successfully!');
-        onSuccess();
-        onClose();
-      } else {
-        alert('❌ ' + response.error);
-      }
+      alert('✅ Leave application submitted successfully!');
+      onSuccess();
+      onClose();
     } catch (error) {
-      alert('❌ Error submitting leave application');
+      alert('❌ ' + (error.response?.data?.detail || 'Error submitting leave application'));
       console.error(error);
     } finally {
       setSubmitting(false);
@@ -108,7 +100,7 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
 
   const getBalanceInfo = () => {
     if (!formData.leaveTypeId) return null;
-    return leaveBalance.find((lb) => lb.leaveTypeId === parseInt(formData.leaveTypeId));
+    return leaveBalance.find((lb) => lb.leave_type_id === parseInt(formData.leaveTypeId));
   };
 
   const balanceInfo = getBalanceInfo();

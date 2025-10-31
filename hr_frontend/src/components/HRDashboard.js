@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LeaveService } from '../services/mockLeaveService';
+import * as api from '../services/api';
 
 function HRDashboard() {
   const [activeTab, setActiveTab] = useState('overview'); // overview, requests, balances
@@ -7,8 +7,6 @@ function HRDashboard() {
   const [allRequests, setAllRequests] = useState([]);
   const [allBalances, setAllBalances] = useState([]);
   const [loading, setLoading] = useState(true);
-  // eslint-disable-next-line no-unused-vars
-  const [filterDepartment, setFilterDepartment] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
 
   useEffect(() => {
@@ -18,17 +16,18 @@ function HRDashboard() {
 
   const loadData = async () => {
     try {
-      const [statsRes, requestsRes, balancesRes] = await Promise.all([
-        LeaveService.getHRStatistics(),
-        LeaveService.getAllLeaveRequests(),
-        LeaveService.getAllEmployeeBalances()
+      const [statsData, requestsData, balancesData] = await Promise.all([
+        api.getHRStatistics(),
+        api.getAllLeaves(),
+        api.getEmployeeBalances()
       ]);
 
-      if (statsRes.success) setStats(statsRes.data);
-      if (requestsRes.success) setAllRequests(requestsRes.data);
-      if (balancesRes.success) setAllBalances(balancesRes.data);
+      setStats(statsData || {});
+      setAllRequests(requestsData || []);
+      setAllBalances(balancesData || []);
     } catch (error) {
       console.error('Error loading HR data:', error);
+      alert('Failed to load HR dashboard data');
     } finally {
       setLoading(false);
     }
@@ -36,13 +35,6 @@ function HRDashboard() {
 
   const getFilteredRequests = () => {
     let filtered = [...allRequests];
-    
-    if (filterDepartment !== 'All') {
-      filtered = filtered.filter(req => {
-        // You'd need to join with employee data in real scenario
-        return true; // Simplified for now
-      });
-    }
     
     if (filterStatus !== 'All') {
       filtered = filtered.filter(req => req.status === filterStatus);
@@ -54,19 +46,19 @@ function HRDashboard() {
   const exportToCSV = () => {
     const headers = ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Applied On', 'Remarks'];
     const rows = getFilteredRequests().map(req => [
-      req.employeeName,
-      req.leaveType,
-      req.startDate,
-      req.endDate,
+      req.employee_name,
+      req.leave_type,
+      req.start_date,
+      req.end_date,
       req.days,
       req.status,
-      req.appliedOn,
-      req.supervisorRemarks || '-'
+      req.applied_on,
+      req.supervisor_remarks || '-'
     ]);
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.join(','))
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -265,19 +257,19 @@ function HRDashboard() {
           <div style={statsGridStyle}>
             <div style={statCardStyle}>
               <div style={statLabelStyle}>Total Employees</div>
-              <div style={statValueStyle}>{stats.totalEmployees}</div>
+              <div style={statValueStyle}>{stats.total_employees || 0}</div>
             </div>
             <div style={statCardStyle}>
               <div style={statLabelStyle}>On Leave Today</div>
-              <div style={statValueStyle}>{stats.onLeaveToday}</div>
+              <div style={statValueStyle}>{stats.on_leave_today || 0}</div>
             </div>
             <div style={statCardStyle}>
               <div style={statLabelStyle}>Pending Approvals</div>
-              <div style={statValueStyle}>{stats.pendingApprovals}</div>
+              <div style={statValueStyle}>{stats.pending_approvals || 0}</div>
             </div>
             <div style={statCardStyle}>
               <div style={statLabelStyle}>Total Leave Requests</div>
-              <div style={statValueStyle}>{stats.totalLeaveRequests}</div>
+              <div style={statValueStyle}>{stats.total_leave_requests || 0}</div>
             </div>
           </div>
 
@@ -289,7 +281,7 @@ function HRDashboard() {
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>
                 🏖️ Employees On Leave Today
               </h3>
-              {stats.employeesOnLeaveToday && stats.employeesOnLeaveToday.length > 0 ? (
+              {stats.employees_on_leave_today && stats.employees_on_leave_today.length > 0 ? (
                 <table style={tableStyle}>
                   <thead>
                     <tr>
@@ -299,9 +291,9 @@ function HRDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {stats.employeesOnLeaveToday.map((leave) => (
+                    {stats.employees_on_leave_today.map((leave) => (
                       <tr key={leave.id}>
-                        <td style={tdStyle}>{leave.employeeName}</td>
+                        <td style={tdStyle}>{leave.employee_name}</td>
                         <td style={tdStyle}>
                           <span style={{
                             padding: '4px 8px',
@@ -311,10 +303,10 @@ function HRDashboard() {
                             fontSize: '12px',
                             fontWeight: '500'
                           }}>
-                            {leave.leaveType}
+                            {leave.leave_type}
                           </span>
                         </td>
-                        <td style={tdStyle}>{leave.startDate} - {leave.endDate}</td>
+                        <td style={tdStyle}>{leave.start_date} - {leave.end_date}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -338,7 +330,7 @@ function HRDashboard() {
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>
                 ⏰ Pending Approvals
               </h3>
-              {stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 ? (
+              {stats.pending_approvals_list && stats.pending_approvals_list.length > 0 ? (
                 <table style={tableStyle}>
                   <thead>
                     <tr>
@@ -348,9 +340,9 @@ function HRDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {stats.pendingApprovalsList.map((leave) => (
+                    {stats.pending_approvals_list.map((leave) => (
                       <tr key={leave.id}>
-                        <td style={tdStyle}>{leave.employeeName}</td>
+                        <td style={tdStyle}>{leave.employee_name}</td>
                         <td style={tdStyle}>
                           <span style={{
                             padding: '4px 8px',
@@ -360,11 +352,11 @@ function HRDashboard() {
                             fontSize: '12px',
                             fontWeight: '500'
                           }}>
-                            {leave.leaveType}
+                            {leave.leave_type}
                           </span>
                         </td>
                         <td style={tdStyle}>
-                          <div>{leave.startDate} - {leave.endDate}</div>
+                          <div>{leave.start_date} - {leave.end_date}</div>
                           <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
                             ({leave.days} {leave.days === 1 ? 'day' : 'days'})
                           </div>
@@ -386,7 +378,6 @@ function HRDashboard() {
                 </div>
               )}
             </div>
-
           </div>
         </>
       )}
@@ -413,79 +404,103 @@ function HRDashboard() {
 
           {/* All Requests Table */}
           <div style={tableContainerStyle}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Employee</th>
-                  <th style={thStyle}>Leave Type</th>
-                  <th style={thStyle}>From</th>
-                  <th style={thStyle}>To</th>
-                  <th style={thStyle}>Days</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Applied On</th>
-                  <th style={thStyle}>Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {getFilteredRequests().map((req) => (
-                  <tr key={req.id}>
-                    <td style={tdStyle}>{req.employeeName}</td>
-                    <td style={tdStyle}>{req.leaveType}</td>
-                    <td style={tdStyle}>{req.startDate}</td>
-                    <td style={tdStyle}>{req.endDate}</td>
-                    <td style={tdStyle}>{req.days}</td>
-                    <td style={tdStyle}>{getStatusBadge(req.status)}</td>
-                    <td style={tdStyle}>{req.appliedOn}</td>
-                    <td style={tdStyle}>{req.supervisorRemarks || '-'}</td>
+            {getFilteredRequests().length > 0 ? (
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Employee</th>
+                    <th style={thStyle}>Leave Type</th>
+                    <th style={thStyle}>From</th>
+                    <th style={thStyle}>To</th>
+                    <th style={thStyle}>Days</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Applied On</th>
+                    <th style={thStyle}>Remarks</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {getFilteredRequests().map((req) => (
+                    <tr key={req.id}>
+                      <td style={tdStyle}>{req.employee_name}</td>
+                      <td style={tdStyle}>{req.leave_type}</td>
+                      <td style={tdStyle}>{req.start_date}</td>
+                      <td style={tdStyle}>{req.end_date}</td>
+                      <td style={tdStyle}>{req.days}</td>
+                      <td style={tdStyle}>{getStatusBadge(req.status)}</td>
+                      <td style={tdStyle}>{req.applied_on}</td>
+                      <td style={tdStyle}>{req.supervisor_remarks || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '40px', 
+                backgroundColor: '#f9fafb', 
+                borderRadius: '6px',
+                color: '#666'
+              }}>
+                <p>No leave requests found</p>
+              </div>
+            )}
           </div>
         </>
       )}
 
       {activeTab === 'balances' && (
         <div style={tableContainerStyle}>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Employee</th>
-                <th style={thStyle}>Email</th>
-                <th style={thStyle}>Designation</th>
-                <th style={thStyle}>Casual (Used/Total)</th>
-                <th style={thStyle}>Sick (Used/Total)</th>
-                <th style={thStyle}>Earned (Used/Total)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allBalances.map((emp) => (
-                <tr key={emp.employeeId}>
-                  <td style={tdStyle}>{emp.employeeName}</td>
-                  <td style={tdStyle}>{emp.email}</td>
-                  <td style={tdStyle}>{emp.designation}</td>
-                  <td style={tdStyle}>
-                    {emp.casual.used}/{emp.casual.total} 
-                    <span style={{ color: '#888', marginLeft: '8px' }}>
-                      ({emp.casual.remaining} left)
-                    </span>
-                  </td>
-                  <td style={tdStyle}>
-                    {emp.sick.used}/{emp.sick.total}
-                    <span style={{ color: '#888', marginLeft: '8px' }}>
-                      ({emp.sick.remaining} left)
-                    </span>
-                  </td>
-                  <td style={tdStyle}>
-                    {emp.earned.used}/{emp.earned.total}
-                    <span style={{ color: '#888', marginLeft: '8px' }}>
-                      ({emp.earned.remaining} left)
-                    </span>
-                  </td>
+          {allBalances.length > 0 ? (
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Employee</th>
+                  <th style={thStyle}>Email</th>
+                  <th style={thStyle}>Designation</th>
+                  <th style={thStyle}>Casual (Used/Total)</th>
+                  <th style={thStyle}>Sick (Used/Total)</th>
+                  <th style={thStyle}>Earned (Used/Total)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {allBalances.map((emp) => (
+                  <tr key={emp.employee_id}>
+                    <td style={tdStyle}>{emp.employee_name}</td>
+                    <td style={tdStyle}>{emp.email}</td>
+                    <td style={tdStyle}>{emp.designation || '-'}</td>
+                    <td style={tdStyle}>
+                      {emp.casual.used}/{emp.casual.total} 
+                      <span style={{ color: '#888', marginLeft: '8px' }}>
+                        ({emp.casual.remaining} left)
+                      </span>
+                    </td>
+                    <td style={tdStyle}>
+                      {emp.sick.used}/{emp.sick.total}
+                      <span style={{ color: '#888', marginLeft: '8px' }}>
+                        ({emp.sick.remaining} left)
+                      </span>
+                    </td>
+                    <td style={tdStyle}>
+                      {emp.earned.used}/{emp.earned.total}
+                      <span style={{ color: '#888', marginLeft: '8px' }}>
+                        ({emp.earned.remaining} left)
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '40px', 
+              backgroundColor: '#f9fafb', 
+              borderRadius: '6px',
+              color: '#666'
+            }}>
+              <p>No employee balance data available</p>
+            </div>
+          )}
         </div>
       )}
     </div>

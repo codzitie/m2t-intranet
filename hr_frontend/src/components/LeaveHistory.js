@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
-import { LeaveService } from '../services/mockLeaveService';
+import * as api from '../services/api';
 
 function LeaveHistory({ onClose }) {
   const { user } = useUser();
@@ -15,12 +15,13 @@ function LeaveHistory({ onClose }) {
 
   const loadLeaveHistory = async () => {
     try {
-      const response = await LeaveService.getLeaveHistory(user.id);
-      if (response.success) {
-        setLeaveHistory(response.data);
+      const response = await api.getLeaveHistory();
+      if (response) {
+        setLeaveHistory(response || []);
       }
     } catch (error) {
       console.error('Error loading leave history:', error);
+      alert('Failed to load leave history');
     } finally {
       setLoading(false);
     }
@@ -197,9 +198,9 @@ function LeaveHistory({ onClose }) {
               <tbody>
                 {filteredHistory.map((leave) => (
                   <tr key={leave.id}>
-                    <td style={tdStyle}>{leave.leaveType}</td>
-                    <td style={tdStyle}>{leave.startDate}</td>
-                    <td style={tdStyle}>{leave.endDate}</td>
+                    <td style={tdStyle}>{leave.leave_type}</td>
+                    <td style={tdStyle}>{leave.start_date}</td>
+                    <td style={tdStyle}>{leave.end_date}</td>
                     <td style={tdStyle}>{leave.days}</td>
                     <td style={tdStyle}>
                       <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -207,9 +208,9 @@ function LeaveHistory({ onClose }) {
                       </div>
                     </td>
                     <td style={tdStyle}>{getStatusBadge(leave.status)}</td>
-                    <td style={tdStyle}>{leave.appliedOn}</td>
+                    <td style={tdStyle}>{leave.applied_on}</td>
                     <td style={tdStyle}>
-                      {leave.supervisorRemarks || (
+                      {leave.supervisor_remarks || (
                         <span style={{ color: '#9CA3AF', fontStyle: 'italic' }}>-</span>
                       )}
                     </td>

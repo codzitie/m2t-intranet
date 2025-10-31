@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { LeaveService } from '../services/mockLeaveService';
+import * as api from '../services/api';
 
 function Notifications() {
   const { user } = useUser();
@@ -34,96 +34,56 @@ function Notifications() {
 
   const loadNotifications = async () => {
     try {
-      const mockNotifications = [];
-
-      // Get employee's own leave updates
-      const historyResponse = await LeaveService.getLeaveHistory(user.id);
-      if (historyResponse.success) {
-        historyResponse.data.forEach((leave) => {
-          if (leave.status === 'Approved') {
-            mockNotifications.push({
-              id: `notif-${leave.id}`,
-              type: 'leave_approved',
-              message: `Your ${leave.leaveType} (${leave.startDate} to ${leave.endDate}) was approved`,
-              timestamp: leave.approvedOn || leave.appliedOn,
-              read: false,
-            });
-          } else if (leave.status === 'Rejected') {
-            mockNotifications.push({
-              id: `notif-${leave.id}`,
-              type: 'leave_rejected',
-              message: `Your ${leave.leaveType} (${leave.startDate} to ${leave.endDate}) was rejected`,
-              timestamp: leave.approvedOn || leave.appliedOn,
-              read: false,
-            });
-          }
-        });
+      const response = await api.getNotifications();
+      if (response) {
+        const notifs = response.notifications || [];
+        setNotifications(notifs);
+        setUnreadCount(response.unread_count || 0);
       }
-
-      // If supervisor, get pending approval notifications
-      if (user.permissions.includes('approve_team_leaves')) {
-        const approvalsResponse = await LeaveService.getPendingApprovals(user.id);
-        if (approvalsResponse.success) {
-          approvalsResponse.data.forEach((leave) => {
-            mockNotifications.push({
-              id: `notif-pending-${leave.id}`,
-              type: 'pending_approval',
-              message: `${leave.employeeName} requested ${leave.leaveType} (${leave.startDate} to ${leave.endDate})`,
-              timestamp: leave.appliedOn,
-              read: false,
-            });
-          });
-        }
-      }
-
-      // Sort by timestamp (most recent first)
-      mockNotifications.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-      // Limit to 10 most recent
-      const recentNotifications = mockNotifications.slice(0, 10);
-      
-      setNotifications(recentNotifications);
-      setUnreadCount(recentNotifications.filter(n => !n.read).length);
     } catch (error) {
       console.error('Error loading notifications:', error);
     }
   };
 
-  const markAsRead = (notificationId) => {
-    setNotifications(prev =>
-      prev.map(notif =>
-        notif.id === notificationId ? { ...notif, read: true } : notif
-      )
-    );
-    setUnreadCount(prev => Math.max(0, prev - 1));
+  const markAsRead = async (notificationId) => {
+    try {
+      await api.markNotificationRead(notificationId);
+      setNotifications(prev =>
+        prev.map(notif =>
+          notif.id === notificationId ? { ...notif, is_read: true } : notif
+        )
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
   const markAllAsRead = () => {
-    setNotifications(prev => prev.map(notif => ({ ...notif, read: true })));
-    setUnreadCount(0);
-  };
-
-  const deleteNotification = (notificationId, event) => {
-    event.stopPropagation(); // Prevent the click from triggering navigation
-    setNotifications(prev => prev.filter(notif => notif.id !== notificationId));
-    setUnreadCount(prev => {
-      const deletedNotif = notifications.find(n => n.id === notificationId);
-      return deletedNotif && !deletedNotif.read ? Math.max(0, prev - 1) : prev;
+    notifications.forEach(notif => {
+      if (!notif.is_read) {
+        markAsRead(notif.id);
+      }
     });
   };
 
+  const deleteNotification = (notificationId, event) => {
+    event.stopPropagation();
+    setNotifications(prev => prev.filter(notif => notif.id !== notificationId));
+    const deletedNotif = notifications.find(n => n.id === notificationId);
+    if (deletedNotif && !deletedNotif.is_read) {
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    }
+  };
+
   const handleNotificationClick = (notif) => {
-    markAsRead(notif.id);
+    if (!notif.is_read) {
+      markAsRead(notif.id);
+    }
     setShowDropdown(false);
     
     // Navigate based on notification type
-    if (notif.type === 'pending_approval') {
-      // For supervisors - go to leave page
-      navigate('/leave');
-    } else if (notif.type === 'leave_approved' || notif.type === 'leave_rejected') {
-      // For employees - go to leave page
-      navigate('/leave');
-    }
+    navigate('/leave');
   };
 
   const getNotificationIcon = (type) => {
@@ -311,13 +271,13 @@ function Notifications() {
             notifications.map((notif) => (
               <div
                 key={notif.id}
-                style={notificationItemStyle(notif.read)}
+                style={notificationItemStyle(notif.is_read)}
                 onClick={() => handleNotificationClick(notif)}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = '#f3f4f6';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = notif.read ? 'white' : '#f9fafb';
+                  e.currentTarget.style.backgroundColor = notif.is_read ? 'white' : '#f9fafb';
                 }}
               >
                 <div style={notificationContentStyle}>
@@ -326,7 +286,7 @@ function Notifications() {
                   </div>
                   <div style={messageStyle}>
                     <div style={messageTextStyle}>{notif.message}</div>
-                    <div style={timestampStyle}>{notif.timestamp}</div>
+                    <div style={timestampStyle}>{notif.created_at}</div>
                   </div>
                   <button
                     onClick={(e) => deleteNotification(notif.id, e)}
