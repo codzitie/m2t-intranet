@@ -7,6 +7,7 @@ import LeaveDashboard from "./components/LeaveDashboard";
 import LeaveCalendar from "./components/LeaveCalendar";
 import LoginPage from './components/LoginPage';
 import RoleSwitcher from "./components/RoleSwitcher";
+import TimesheetDashboard from "./components/timesheet/TimesheetDashboard";
 
 function PlaceholderPage({ title }) {
   return (
@@ -77,13 +78,13 @@ function AppRoutes() {
         />
         
         <Route 
-          path="/attendance" 
-          element={
-            <ProtectedRoute>
-              <PlaceholderPage title="Attendance & Daily Timesheet System" />
-            </ProtectedRoute>
-          } 
-        />
+  path="/attendance" 
+  element={
+    <ProtectedRoute>
+      <TimesheetDashboard />
+    </ProtectedRoute>
+  } 
+/>
         
         <Route 
           path="/policy" 
