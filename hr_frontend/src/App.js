@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { UserProvider, useUser } from "./context/UserContext";
+import { TimesheetProvider } from "./context/TimesheetContext";
 import Header from "./components/Header";
 import HomePage from "./components/HomePage";
 import LeaveDashboard from "./components/LeaveDashboard";
@@ -8,6 +9,7 @@ import LeaveCalendar from "./components/LeaveCalendar";
 import LoginPage from './components/LoginPage';
 import RoleSwitcher from "./components/RoleSwitcher";
 import TimesheetDashboard from "./components/timesheet/TimesheetDashboard";
+
 
 function PlaceholderPage({ title }) {
   return (
@@ -17,6 +19,7 @@ function PlaceholderPage({ title }) {
     </div>
   );
 }
+
 
 // Protected Route Component
 function ProtectedRoute({ children }) {
@@ -36,6 +39,7 @@ function ProtectedRoute({ children }) {
 
   return children;
 }
+
 
 function AppRoutes() {
   const { isAuthenticated } = useUser();
@@ -78,13 +82,13 @@ function AppRoutes() {
         />
         
         <Route 
-  path="/attendance" 
-  element={
-    <ProtectedRoute>
-      <TimesheetDashboard />
-    </ProtectedRoute>
-  } 
-/>
+          path="/attendance" 
+          element={
+            <ProtectedRoute>
+              <TimesheetDashboard />
+            </ProtectedRoute>
+          } 
+        />
         
         <Route 
           path="/policy" 
@@ -114,14 +118,19 @@ function AppRoutes() {
   );
 }
 
+
 function App() {
   return (
     <UserProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
+      {/* ✅ WRAP WITH TIMESHEET PROVIDER */}
+      <TimesheetProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </TimesheetProvider>
     </UserProvider>
   );
 }
+
 
 export default App;

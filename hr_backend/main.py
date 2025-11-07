@@ -14,6 +14,8 @@ from auth import (
     hash_password, verify_password, create_access_token, 
     get_current_user, get_user_permissions, require_permission
 )
+from routes.timesheets import router as timesheet_router
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -25,11 +27,13 @@ app = FastAPI(
 # CORS Configuration - Allow frontend to connect
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React app URL
+    allow_origins=["http://localhost:3000","http://localhost:5173"],  # React app URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(timesheet_router)
 
 # Helper function to calculate working days (excluding weekends)
 def calculate_working_days(start_date: date, end_date: date) -> int:

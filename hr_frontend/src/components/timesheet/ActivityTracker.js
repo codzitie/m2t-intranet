@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { useUser } from '../../context/UserContext';
+
 
 function ActivityTracker() {
+  const { user } = useUser();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activities, setActivities] = useState([
     {
@@ -8,8 +11,8 @@ function ActivityTracker() {
       date: new Date().toISOString().split('T')[0],
       slot: 'morning',
       description: 'Attended project kickoff call',
-      startTime: '10:00',
-      endTime: '11:00',
+      start_time: '10:00',
+      end_time: '11:00',
       output: 'Created meeting notes and action items list',
     },
     {
@@ -17,8 +20,8 @@ function ActivityTracker() {
       date: new Date().toISOString().split('T')[0],
       slot: 'afternoon',
       description: 'Analyzed competitor data',
-      startTime: '14:00',
-      endTime: '15:30',
+      start_time: '14:00',
+      end_time: '15:30',
       output: 'Prepared competitor analysis document',
     },
   ]);
@@ -26,8 +29,8 @@ function ActivityTracker() {
   const [formData, setFormData] = useState({
     slot: 'morning',
     description: '',
-    startTime: '09:30',
-    endTime: '10:00',
+    start_time: '09:30',
+    end_time: '10:00',
     output: '',
   });
 
@@ -53,7 +56,7 @@ function ActivityTracker() {
     },
   };
 
-  // TODAY AND YESTERDAY CAN EDIT - OTHERS READ ONLY
+  // ✅ TODAY AND YESTERDAY CAN EDIT - OTHERS READ ONLY
   const isEditableDate = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -118,8 +121,8 @@ function ActivityTracker() {
     let totalMinutes = 0;
 
     todaysActivities.forEach(activity => {
-      const startMins = timeToMinutes(activity.startTime);
-      const endMins = timeToMinutes(activity.endTime);
+      const startMins = timeToMinutes(activity.start_time);
+      const endMins = timeToMinutes(activity.end_time);
       totalMinutes += (endMins - startMins);
     });
 
@@ -142,7 +145,7 @@ function ActivityTracker() {
     return actStart >= slotStart && actEnd <= slotEnd && actStart < actEnd;
   };
 
-  // Validate form
+  // ✅ VALIDATE FORM
   const validateForm = () => {
     const newErrors = {};
 
@@ -158,12 +161,12 @@ function ActivityTracker() {
       newErrors.output = 'Output is required';
     }
 
-    if (!isTimeInSlot(formData.slot, formData.startTime, formData.endTime)) {
+    if (!isTimeInSlot(formData.slot, formData.start_time, formData.end_time)) {
       const slot = TIME_SLOTS[formData.slot];
       newErrors.time = `Time must be within ${slot.label}`;
     }
 
-    if (formData.startTime >= formData.endTime) {
+    if (formData.start_time >= formData.end_time) {
       newErrors.time = 'End time must be after start time';
     }
 
@@ -171,7 +174,7 @@ function ActivityTracker() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle add/update
+  // ✅ HANDLE ADD/UPDATE
   const handleSaveActivity = async () => {
     if (!validateForm()) {
       return;
@@ -208,8 +211,8 @@ function ActivityTracker() {
       setFormData({
         slot: 'morning',
         description: '',
-        startTime: '09:30',
-        endTime: '10:00',
+        start_time: '09:30',
+        end_time: '10:00',
         output: '',
       });
       setEditingId(null);
@@ -226,8 +229,8 @@ function ActivityTracker() {
     setFormData({
       slot: activity.slot,
       description: activity.description,
-      startTime: activity.startTime,
-      endTime: activity.endTime,
+      start_time: activity.start_time,
+      end_time: activity.end_time,
       output: activity.output,
     });
     setEditingId(activity.id);
@@ -240,8 +243,8 @@ function ActivityTracker() {
         setFormData({
           slot: 'morning',
           description: '',
-          startTime: '09:30',
-          endTime: '10:00',
+          start_time: '09:30',
+          end_time: '10:00',
           output: '',
         });
         setEditingId(null);
@@ -253,8 +256,8 @@ function ActivityTracker() {
     setFormData({
       slot: 'morning',
       description: '',
-      startTime: '09:30',
-      endTime: '10:00',
+      start_time: '09:30',
+      end_time: '10:00',
       output: '',
     });
     setEditingId(null);
@@ -607,9 +610,9 @@ function ActivityTracker() {
               </label>
               <input
                 type="time"
-                value={formData.startTime}
+                value={formData.start_time}
                 onChange={(e) => {
-                  setFormData({ ...formData, startTime: e.target.value });
+                  setFormData({ ...formData, start_time: e.target.value });
                   setErrors({});
                 }}
                 style={inputStyle}
@@ -621,9 +624,9 @@ function ActivityTracker() {
               </label>
               <input
                 type="time"
-                value={formData.endTime}
+                value={formData.end_time}
                 onChange={(e) => {
-                  setFormData({ ...formData, endTime: e.target.value });
+                  setFormData({ ...formData, end_time: e.target.value });
                   setErrors({});
                 }}
                 style={inputStyle}
@@ -762,7 +765,7 @@ function ActivityTracker() {
                         {status.label}
                       </div>
                       <div style={activityTimeStyle}>
-                        🕐 {activity.startTime} - {activity.endTime}
+                        🕐 {activity.start_time} - {activity.end_time}
                       </div>
                       <div style={activityDescriptionStyle}>
                         {activity.description}
@@ -831,7 +834,7 @@ function ActivityTracker() {
                         {status.label}
                       </div>
                       <div style={activityTimeStyle}>
-                        🕐 {activity.startTime} - {activity.endTime}
+                        🕐 {activity.start_time} - {activity.end_time}
                       </div>
                       <div style={activityDescriptionStyle}>
                         {activity.description}

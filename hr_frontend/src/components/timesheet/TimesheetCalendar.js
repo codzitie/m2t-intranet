@@ -1,53 +1,65 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import TimesheetEntryModal from './TimesheetEntryModal';
 
 function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [updatedData, setUpdatedData] = useState(timesheetData);
-  const [savedEntries, setSavedEntries] = useState({});
+
+  // ✅ UPDATE LOCAL STATE WHEN PROPS CHANGE
+  useEffect(() => {
+    setUpdatedData(timesheetData);
+  }, [timesheetData]);
 
   if (!timesheetData || timesheetData.length === 0) {
     return <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>No data available</div>;
   }
 
-  const firstDate = timesheetData[0].date;
-  const startingDayOfWeek = firstDate.getDay();
+  // ✅ SAFE DATE CONVERSION
+  const firstDateObj = typeof timesheetData[0].date === 'string'
+    ? new Date(timesheetData[0].date + 'T00:00:00')
+    : timesheetData[0].date;
+
+  const startingDayOfWeek = firstDateObj.getDay();
 
   const emptyCells = Array(startingDayOfWeek).fill(null);
   const allCells = [...emptyCells, ...updatedData];
 
-  // eslint-disable-next-line no-unused-vars
-  const isFirstAbsentDay = (dayData) => {
-    const absentDays = updatedData.filter(d => d.isAbsent).sort((a, b) => a.day - b.day);
-    return dayData.isAbsent && absentDays.length > 0 && dayData.day === absentDays[0].day;
-  };
-
-  // Handle modal save - persist the data
+  // Handle modal save - update with API response
   const handleSaveEntry = async (data) => {
-    console.log('Saving timesheet entry:', data);
+    console.log('Timesheet entry saved:', data);
 
-    const dateKey = data.date.toISOString().split('T')[0];
-    setSavedEntries(prev => ({
-      ...prev,
-      [dateKey]: data
-    }));
+    // ✅ SAFE DATE COMPARISON
+    const savedDateObj = typeof data.date === 'string'
+      ? new Date(data.date + 'T00:00:00')
+      : data.date;
 
-    const newUpdatedData = updatedData.map(day =>
-      day.date.toDateString() === data.date.toDateString()
-        ? { 
-            ...day, 
-            hoursLogged: data.hours, 
-            status: 'filled',
-            startTime: data.startTime,
-            endTime: data.endTime,
-            activityDescription: data.activityDescription
-          }
-        : day
-    );
+    const newUpdatedData = updatedData.map(day => {
+      const dayDateObj = typeof day.date === 'string'
+        ? new Date(day.date + 'T00:00:00')
+        : day.date;
+
+      const isSameDay = dayDateObj.toDateString() === savedDateObj.toDateString();
+
+      if (isSameDay) {
+        return {
+          ...day,
+          ...data,
+          hoursLogged: data.hours_logged ? (data.hours_logged / 60).toFixed(1) : data.hours,
+          status: data.status || 'filled',
+          startTime: data.start_time || data.startTime,
+          endTime: data.end_time || data.endTime,
+          description: data.description,
+          activities: data.activities || [],
+          isLocked: data.is_locked || false,
+        };
+      }
+      return day;
+    });
 
     setUpdatedData(newUpdatedData);
 
+    // ✅ NOTIFY PARENT
     if (onDataUpdate) {
       onDataUpdate(newUpdatedData);
     }
@@ -57,19 +69,17 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
 
   // Handle date click
   const handleDateClick = (dayData) => {
+    // ✅ Can't edit past months
     if (!isCurrentMonth) {
       return;
     }
 
-    if (dayData && dayData.isEditable) {
-      const dateKey = dayData.date.toISOString().split('T')[0];
-      const existingEntry = savedEntries[dateKey];
-      
-      const dataToPass = existingEntry 
-        ? { ...dayData, ...existingEntry }
-        : dayData;
-      
-      setSelectedDate(dataToPass);
+    // ✅ Can only click on editable dates
+    if (dayData && (dayData.isEditable || dayData.status === 'filled' || dayData.status === 'pending')) {
+      setSelectedDate({
+        ...dayData,
+        date: dayData.date,
+      });
       setShowEntryModal(true);
     }
   };
@@ -126,29 +136,24 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
     let borderColor = '#e5e7eb';
     let textColor = '#333';
 
-    // ✅ UPDATED: Only Sunday is weekend (day 0)
+    // ✅ ONLY SUNDAY IS WEEKEND (day 0)
     if (dayData.isWeekend) {
       bgColor = '#f9fafb';
       textColor = '#999';
-    } 
-    else if (dayData.isAbsent) {
+    } else if (dayData.is_absent || dayData.isAbsent) {
       bgColor = '#DC2626';
       borderColor = '#991B1B';
       textColor = 'white';
-    }
-    else if (dayData.isLocked) {
+    } else if (dayData.is_locked || dayData.isLocked) {
       bgColor = '#FEE2E2';
       borderColor = '#FECACA';
-    } 
-    else if (dayData.status === 'filled') {
+    } else if (dayData.status === 'filled') {
       bgColor = '#D1FAE5';
       borderColor = '#6EE7B7';
-    } 
-    else if (dayData.status === 'pending') {
+    } else if (dayData.status === 'pending') {
       bgColor = '#FEF3C7';
       borderColor = '#FCD34D';
-    } 
-    else if (dayData.isToday) {
+    } else if (dayData.isToday) {
       bgColor = '#EFF6FF';
       borderColor = '#0284C7';
     }
@@ -164,7 +169,7 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      cursor: isCurrentMonth && dayData.isEditable ? 'pointer' : 'default',
+      cursor: isCurrentMonth && (dayData.isEditable || dayData.status === 'filled') ? 'pointer' : 'default',
       transition: 'all 0.3s ease',
       color: textColor,
       opacity: isCurrentMonth ? 1 : 0.8,
@@ -196,19 +201,19 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
     let bgColor = 'white';
     let textColor = '#666';
 
-    if (dayData.isAbsent) {
+    const isAbsent = dayData.is_absent || dayData.isAbsent;
+    const isLocked = dayData.is_locked || dayData.isLocked;
+
+    if (isAbsent) {
       bgColor = 'rgba(255, 255, 255, 0.2)';
       textColor = 'white';
-    } 
-    else if (dayData.isLocked) {
+    } else if (isLocked) {
       bgColor = '#FECACA';
       textColor = '#991B1B';
-    } 
-    else if (dayData.status === 'filled') {
+    } else if (dayData.status === 'filled') {
       bgColor = '#6EE7B7';
       textColor = '#065F46';
-    } 
-    else if (dayData.status === 'pending') {
+    } else if (dayData.status === 'pending') {
       bgColor = '#FCD34D';
       textColor = '#92400E';
     }
@@ -221,12 +226,29 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
   };
 
   const getStatusText = (dayData) => {
-    if (dayData.isAbsent) return '❌ ABSENT';
-    if (dayData.isLocked) return 'Locked';
+    if (dayData.is_absent || dayData.isAbsent) return '❌ ABSENT';
+    if (dayData.is_locked || dayData.isLocked) return 'Locked';
     if (dayData.status === 'filled') return 'Filled';
     if (dayData.status === 'pending') return 'Pending';
     if (dayData.isToday) return 'Today';
     return 'Editable';
+  };
+
+  // ✅ GET HOURS DISPLAY VALUE
+  const getHoursDisplay = (dayData) => {
+    if (dayData.is_absent || dayData.isAbsent) {
+      return null;
+    }
+
+    if (dayData.hours_logged) {
+      return ((dayData.hours_logged / 60).toFixed(1)) + 'h';
+    }
+
+    if (dayData.hoursLogged) {
+      return dayData.hoursLogged + 'h';
+    }
+
+    return null;
   };
 
   return (
@@ -249,13 +271,13 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
               style={getDayCellStyle(dayData)}
               onClick={() => handleDateClick(dayData)}
               onMouseEnter={(e) => {
-                if (isCurrentMonth && dayData && dayData.isEditable) {
+                if (isCurrentMonth && dayData && (dayData.isEditable || dayData.status === 'filled')) {
                   e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                 }
               }}
               onMouseLeave={(e) => {
-                if (isCurrentMonth && dayData && dayData.isEditable) {
+                if (isCurrentMonth && dayData && (dayData.isEditable || dayData.status === 'filled')) {
                   e.currentTarget.style.boxShadow = 'none';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }
@@ -264,8 +286,8 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
               {dayData && (
                 <>
                   <div style={dayNumberStyle}>{dayData.day}</div>
-                  {dayData.hoursLogged && !dayData.isAbsent && (
-                    <div style={hoursStyle}>{dayData.hoursLogged}h</div>
+                  {getHoursDisplay(dayData) && (
+                    <div style={hoursStyle}>{getHoursDisplay(dayData)}</div>
                   )}
                   <div style={getStatusBadgeStyle(dayData)}>
                     {getStatusText(dayData)}

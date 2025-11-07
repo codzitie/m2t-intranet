@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../../context/UserContext';
+import timesheetService from '../../services/timesheetService';
 import TimesheetCalendar from './TimesheetCalendar';
 import ActivityTracker from './ActivityTracker';
 import ManagerTimesheetDashboard from './ManagerTimesheetDashboard';
 import AdminTimesheetDashboard from './AdminTimesheetDashboard';
 
 function TimesheetDashboard() {
-  const { user } = useUser();
+  const { user, token } = useUser();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [timesheetData, setTimesheetData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,15 +22,23 @@ function TimesheetDashboard() {
     totalDays: 0,
   });
   const [error, setError] = useState('');
-  const [absenceInfo, setAbsenceInfo] = useState(null);
   const [isCurrentMonth, setIsCurrentMonth] = useState(true);
 
+  // ============= FETCH TIMESHEET DATA FROM API =============
   useEffect(() => {
-    if (user) {
+    console.log('🔍 useEffect triggered');
+    console.log('User:', user);
+    console.log('Token:', token ? 'EXISTS' : 'MISSING');
+    
+    if (user && token) {
+      console.log('✅ Calling loadTimesheetData()');
       loadTimesheetData();
+    } else {
+      console.log('❌ User or token missing!');
+      setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, currentMonth]);
+  }, [user, token, currentMonth]);
 
   const loadTimesheetData = async () => {
     try {
@@ -42,22 +51,53 @@ function TimesheetDashboard() {
         currentMonth.getMonth() === today.getMonth();
       setIsCurrentMonth(isCurrent);
 
-      const mockData = generateMockTimesheetData(currentMonth);
-      setTimesheetData(mockData);
+      const year = currentMonth.getFullYear();
+      const month = currentMonth.getMonth() + 1;
 
-      calculateStats(mockData);
-      calculateAbsence(mockData);
+      console.log(`📅 Fetching: /api/timesheets/month/${year}/${month}`);
+
+      // ✅ Get timesheet entries
+      const entries = await timesheetService.getMonthTimesheets(token, year, month);
+      console.log('✅ Got entries:', entries);
+      
+      // ✅ GET STATS FROM API (Backend calculates with auto-lock logic)
+      const statsData = await timesheetService.getTimesheetStats(token, year, month);
+      console.log('✅ Got stats from API:', statsData);
+
+      // ✅ Format API data for frontend display only
+      const formattedData = formatApiDataForFrontend(entries, currentMonth, isCurrent);
+      console.log('✅ Formatted data:', formattedData);
+      
+      setTimesheetData(formattedData);
+      
+      // ✅ TRANSFORM SNAKE_CASE TO CAMELCASE
+      const transformedStats = {
+        filledDays: statsData.filled_days || 0,
+        pendingDays: statsData.pending_days || 0,
+        lockedDays: statsData.locked_days || 0,
+        absenceDays: statsData.absent_days || 0,
+        totalDays: statsData.total_days || 0,
+      };
+      console.log('✅ Transformed stats:', transformedStats);
+      
+      setStats(transformedStats);
+
     } catch (error) {
-      console.error('Error loading timesheet data:', error);
-      setError('Failed to load timesheet data. Please try again.');
+      console.error('❌ ERROR:', error);
+      console.error('Error message:', error.message);
+      console.error('Error detail:', error.detail);
+      console.error('Full error:', error);
+      
+      setError(error?.detail || error?.message || 'Failed to load timesheet data. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const generateMockTimesheetData = (date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
+  // ============= FORMAT API DATA FOR FRONTEND =============
+  const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
 
@@ -65,141 +105,91 @@ function TimesheetDashboard() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // ✅ Calculate 2 days ago for display logic
+    const twoDaysAgo = new Date(today);
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+    const entriesMap = {};
+    if (Array.isArray(apiEntries)) {
+      apiEntries.forEach(entry => {
+        entriesMap[entry.date] = entry;
+      });
+    }
+
     for (let i = 1; i <= daysInMonth; i++) {
       const currentDate = new Date(year, month, i);
-      // ✅ UPDATED: Only Sunday (0) is weekend, not Saturday
+      const dateStr = currentDate.toISOString().split('T')[0];
+      
       const isWeekend = currentDate.getDay() === 0;
       const isToday = currentDate.toDateString() === today.toDateString();
       const isPast = currentDate < today;
 
-      const daysDiff = Math.floor((today - currentDate) / (1000 * 60 * 60 * 24));
-      const isCurrentOrPreviousDay = isToday || (isPast && daysDiff === 1);
+      const apiEntry = entriesMap[dateStr];
 
-      const randomHours = Math.random();
       let hoursLogged = null;
       let status = 'future';
       let isLocked = false;
       let isEditable = false;
+      let description = '';
+      let activities = [];
+      let startTime = '';
+      let endTime = '';
+      let isAbsent = false;
 
       if (isWeekend) {
+        // ✅ WEEKEND - NOT EDITABLE
         status = 'weekend';
-      } else if (isPast || isToday) {
-        if (daysDiff >= 2 && randomHours > 0.5) {
+        isLocked = false;
+      } else if (apiEntry) {
+        // ✅ HAS DATA FROM API
+        status = apiEntry.status;
+        isLocked = apiEntry.is_locked;
+        isAbsent = apiEntry.is_absent;
+        hoursLogged = apiEntry.hours_logged ? (apiEntry.hours_logged / 60).toFixed(1) : null;
+        description = apiEntry.description;
+        activities = apiEntry.activities || [];
+        startTime = apiEntry.start_time;
+        endTime = apiEntry.end_time;
+        isEditable = !isLocked;
+      } else if (currentDate <= today && !isWeekend) {
+        // ✅ NO DATA, BUT PAST/TODAY
+        if (currentDate < twoDaysAgo) {
+          // ✅ OLDER THAN 2 DAYS = AUTO-LOCKED (matches backend logic)
           status = 'locked';
           isLocked = true;
           isEditable = false;
-        } else if (isCurrentOrPreviousDay) {
-          if (randomHours > 0.6) {
-            hoursLogged = (7 + randomHours).toFixed(1);
-            status = 'filled';
-            isEditable = false;
-          } else {
-            status = 'pending';
-            isEditable = true;
-          }
-        } else if (daysDiff === 1 && randomHours < 0.5) {
+        } else {
+          // ✅ 0-2 DAYS AGO = EDITABLE
           status = 'pending';
-          isEditable = false;
-        } else if (daysDiff > 1 && randomHours > 0.3) {
-          hoursLogged = (7 + randomHours).toFixed(1);
-          status = 'filled';
-          isEditable = false;
-        } else if (daysDiff > 1) {
-          status = 'locked';
-          isLocked = true;
-          isEditable = false;
+          isLocked = false;
+          isEditable = isCurrentMonth;
         }
       }
 
       data.push({
+        id: apiEntry?.id,
         date: currentDate,
         day: i,
-        isWeekend: isWeekend,
-        isToday: isToday,
-        isPast: isPast,
-        daysDiff: daysDiff,
-        hoursLogged: hoursLogged,
-        status: status,
-        isEditable: isEditable,
-        isLocked: isLocked,
-        isAbsent: false,
+        isWeekend,
+        isToday,
+        isPast,
+        hoursLogged,
+        status,
+        isEditable,
+        isLocked,
+        isAbsent,
+        description,
+        activities,
+        startTime,
+        endTime,
       });
     }
+
     return data;
-  };
-
-  const calculateAbsence = (data) => {
-    const lockedDays = data.filter(
-      day => day.isLocked && !day.isWeekend && (day.isPast || day.isToday)
-    );
-
-    const totalLockedDays = lockedDays.length;
-    let absenceCount = 0;
-    let absenceDays = [];
-
-    if (totalLockedDays >= 3) {
-      absenceCount = Math.ceil(totalLockedDays / 3);
-    }
-
-    if (absenceCount > 0) {
-      absenceDays = lockedDays.slice(0, absenceCount);
-
-      const updatedData = data.map(day => {
-        const isAbsentDay = absenceDays.some(
-          absDay => absDay.day === day.day && absDay.status === 'locked'
-        );
-        return isAbsentDay ? { ...day, isAbsent: true } : day;
-      });
-
-      setTimesheetData(updatedData);
-
-      setAbsenceInfo({
-        absentDates: absenceDays.map(d => d.day),
-        absenceCount: absenceCount,
-        totalLockedDays: totalLockedDays,
-        month: new Date(lockedDays[0].date).toLocaleString('default', { month: 'long' })
-      });
-    } else {
-      setAbsenceInfo(null);
-    }
-  };
-
-  const calculateStats = (data) => {
-    let filled = 0;
-    let pending = 0;
-    let locked = 0;
-    let absent = 0;
-    let total = 0;
-
-    data.forEach((day) => {
-      if (!day.isWeekend && (day.isPast || day.isToday)) {
-        total++;
-        if (day.isAbsent) {
-          absent++;
-          locked++;
-        } else if (day.isLocked) {
-          locked++;
-        } else if (day.hoursLogged) {
-          filled++;
-        } else {
-          pending++;
-        }
-      }
-    });
-
-    setStats({
-      filledDays: filled,
-      pendingDays: pending,
-      lockedDays: locked,
-      absenceDays: absent,
-      totalDays: total,
-    });
   };
 
   const handleCalendarDataUpdate = (updatedData) => {
     setTimesheetData(updatedData);
-    calculateStats(updatedData);
-    calculateAbsence(updatedData);
   };
 
   const goToPreviousMonth = () => {
@@ -214,7 +204,7 @@ function TimesheetDashboard() {
     setCurrentMonth(new Date());
   };
 
-  // Styles
+  // ============= STYLES =============
   const containerStyle = {
     maxWidth: '1200px',
     margin: '0 auto',
@@ -235,20 +225,6 @@ function TimesheetDashboard() {
   const subtitleStyle = {
     fontSize: '16px',
     color: '#666',
-  };
-
-  const absenceBannerStyle = {
-    backgroundColor: '#DC2626',
-    border: '2px solid #991B1B',
-    color: 'white',
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    fontSize: '15px',
-    fontWeight: '600',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
   };
 
   const pastMonthWarningStyle = {
@@ -425,7 +401,7 @@ function TimesheetDashboard() {
     fontWeight: '500',
   };
 
-  // ========== RENDER BASED ON ROLE ==========
+  // ========== RENDER ==========
 
   if (!user) {
     return (
@@ -443,13 +419,10 @@ function TimesheetDashboard() {
     );
   }
 
-  // ✅ EMPLOYEE VIEW (DEFAULT)
   return (
     <div style={containerStyle}>
-      {/* Error Message */}
-      {error && <div style={errorStyle}>{error}</div>}
+      {error && <div style={errorStyle}>⚠️ {error}</div>}
 
-      {/* Past Month Warning */}
       {!isCurrentMonth && (
         <div style={pastMonthWarningStyle}>
           <div style={{ fontSize: '18px' }}>⏰</div>
@@ -459,39 +432,13 @@ function TimesheetDashboard() {
         </div>
       )}
 
-      {/* Absence Banner */}
-      {absenceInfo && (
-        <div style={absenceBannerStyle}>
-          <div style={{ fontSize: '20px' }}>❌</div>
-          <div>
-            <strong>{absenceInfo.absenceCount === 1 ? '1 day' : `${absenceInfo.absenceCount} days`} marked as ABSENT:</strong> {absenceInfo.month} ({absenceInfo.absentDates.join(', ')})
-            <br />
-            <span style={{ fontSize: '13px', opacity: 0.9 }}>
-              ({absenceInfo.totalLockedDays} total missed timesheet entries)
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Header Section */}
       <div style={headerStyle}>
         <h1 style={titleStyle}>Welcome, {user.name}!</h1>
         <p style={subtitleStyle}>Log your daily working hours and activities</p>
       </div>
 
-      {/* Stats Cards */}
       <div style={statsGridStyle}>
-        <div
-          style={statCardStyle}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}
-        >
+        <div style={statCardStyle}>
           <div style={statLabelStyle}>Days Filled</div>
           <div style={statValueStyle}>{stats.filledDays}</div>
           <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
@@ -499,17 +446,7 @@ function TimesheetDashboard() {
           </div>
         </div>
 
-        <div
-          style={statCardStyle}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}
-        >
+        <div style={statCardStyle}>
           <div style={statLabelStyle}>Pending Days</div>
           <div style={statValueStyle}>{stats.pendingDays}</div>
           <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
@@ -517,17 +454,7 @@ function TimesheetDashboard() {
           </div>
         </div>
 
-        <div
-          style={statCardStyle}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}
-        >
+        <div style={statCardStyle}>
           <div style={statLabelStyle}>Locked Days</div>
           <div style={{ ...statValueStyle, color: stats.lockedDays > 0 ? '#EF4444' : '#10B981' }}>
             {stats.lockedDays}
@@ -538,33 +465,13 @@ function TimesheetDashboard() {
         </div>
 
         {stats.absenceDays > 0 && (
-          <div
-            style={{
-              ...statCardStyle,
-              backgroundColor: '#DC2626',
-              borderColor: '#991B1B',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(220,38,38,0.3)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-            }}
-          >
+          <div style={{...statCardStyle, backgroundColor: '#DC2626', borderColor: '#991B1B'}}>
             <div style={{ ...statLabelStyle, color: 'white' }}>Days Marked Absent</div>
-            <div style={{ ...statValueStyle, color: 'white' }}>
-              {stats.absenceDays}
-            </div>
-            <div style={{ fontSize: '12px', color: '#fecaca', marginTop: '8px' }}>
-              {absenceInfo?.absenceCount === 1 ? '1 day' : `${absenceInfo?.absenceCount} days`} marked
-            </div>
+            <div style={{ ...statValueStyle, color: 'white' }}>{stats.absenceDays}</div>
           </div>
         )}
       </div>
 
-      {/* Manager/Admin Section - Only for Manager & HR */}
       {(user.role === 'Manager' || user.role === 'HR') && (
         <>
           <div style={dividerStyle}>
@@ -573,13 +480,12 @@ function TimesheetDashboard() {
             </div>
           </div>
 
-          {/* Manager Section */}
           {user.role === 'Manager' && (
             <div style={managementSectionStyle}>
               <div style={managementHeaderStyle}>
                 <div>
                   <h3 style={managementTitleStyle}>👥 Team Timesheet Management</h3>
-                  <p style={managementDescStyle}>View your team members' timesheets and track completion status</p>
+                  <p style={managementDescStyle}>View your team members' timesheets</p>
                 </div>
                 <button
                   onClick={() => setShowManagerView(!showManagerView)}
@@ -597,7 +503,6 @@ function TimesheetDashboard() {
             </div>
           )}
 
-          {/* HR Section */}
           {user.role === 'HR' && (
             <div style={managementSectionStyle}>
               <div style={managementHeaderStyle}>
@@ -623,51 +528,48 @@ function TimesheetDashboard() {
         </>
       )}
 
-      {/* Tab Navigation */}
       {!showManagerView && !showAdminView && (
         <>
           <div style={tabContainerStyle}>
-            <button
-              style={tabButtonStyle(activeTab === 'timesheet')}
+            <button 
+              style={tabButtonStyle(activeTab === 'timesheet')} 
               onClick={() => setActiveTab('timesheet')}
             >
               📅 Timesheet
             </button>
-            <button
-              style={tabButtonStyle(activeTab === 'activities')}
+            <button 
+              style={tabButtonStyle(activeTab === 'activities')} 
               onClick={() => setActiveTab('activities')}
             >
               📝 Activities
             </button>
           </div>
 
-          {/* Tab Content */}
           {activeTab === 'timesheet' && (
             <div>
-              {/* Month Navigation */}
               <div style={monthNavigationStyle}>
                 <div style={monthDisplayStyle}>
                   {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
                 </div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <button
-                    style={navButtonStyle}
+                  <button 
+                    style={navButtonStyle} 
                     onClick={goToPreviousMonth}
                     onMouseEnter={(e) => e.target.style.backgroundColor = '#f3f4f6'}
                     onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
                   >
                     ← Previous
                   </button>
-                  <button
-                    style={navButtonStyle}
+                  <button 
+                    style={navButtonStyle} 
                     onClick={goToCurrentMonth}
                     onMouseEnter={(e) => e.target.style.backgroundColor = '#f3f4f6'}
                     onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
                   >
                     Today
                   </button>
-                  <button
-                    style={navButtonStyle}
+                  <button 
+                    style={navButtonStyle} 
                     onClick={goToNextMonth}
                     onMouseEnter={(e) => e.target.style.backgroundColor = '#f3f4f6'}
                     onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
@@ -677,7 +579,6 @@ function TimesheetDashboard() {
                 </div>
               </div>
 
-              {/* Calendar Component */}
               <TimesheetCalendar 
                 timesheetData={timesheetData} 
                 isCurrentMonth={isCurrentMonth}
@@ -690,10 +591,7 @@ function TimesheetDashboard() {
         </>
       )}
 
-      {/* Show Manager View */}
       {showManagerView && <ManagerTimesheetDashboard />}
-
-      {/* Show Admin View */}
       {showAdminView && <AdminTimesheetDashboard />}
     </div>
   );

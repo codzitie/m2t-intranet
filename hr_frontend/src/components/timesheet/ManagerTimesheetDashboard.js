@@ -1,88 +1,110 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUser } from '../../context/UserContext';
+import timesheetService from '../../services/timesheetService';
+
 
 function ManagerTimesheetDashboard() {
-  const { user } = useUser();
+  const { user, token } = useUser();
   const [activeTab, setActiveTab] = useState('today-updated');
   const [searchEmployee, setSearchEmployee] = useState('');
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Mock employees reporting to manager
-  const [allEmployees] = useState([
-    {
-      id: 101,
-      name: 'Rajesh Kumar',
-      reportsTo: 5,
-      todayStatus: 'filled',
-      yesterdayStatus: 'filled',
-      todayTimesheet: {
-        date: '2025-11-05',
-        startTime: '09:30',
-        endTime: '18:00',
-        hoursLogged: 8.5,
-        activities: [
-          {
-            id: 1,
-            slot: 'morning',
-            description: 'Frontend development',
-            startTime: '10:00',
-            endTime: '12:30',
-            output: 'Completed login page UI',
-          },
-          {
-            id: 2,
-            slot: 'afternoon',
-            description: 'Bug fixes',
-            startTime: '14:00',
-            endTime: '17:00',
-            output: 'Fixed 4 critical bugs',
-          },
-        ],
-      },
-    },
-    {
-      id: 102,
-      name: 'Priya Singh',
-      reportsTo: 5,
-      todayStatus: 'filled',
-      yesterdayStatus: 'pending',
-      todayTimesheet: {
-        date: '2025-11-05',
-        startTime: '09:00',
-        endTime: '17:30',
-        hoursLogged: 8.5,
-        activities: [
-          {
-            id: 1,
-            slot: 'morning',
-            description: 'Code review',
-            startTime: '09:30',
-            endTime: '11:00',
-            output: 'Reviewed 3 PRs',
-          },
-        ],
-      },
-    },
-    {
-      id: 103,
-      name: 'Amit Patel',
-      reportsTo: 5,
-      todayStatus: 'pending',
-      yesterdayStatus: 'filled',
-      todayTimesheet: null,
-    },
-    {
-      id: 104,
-      name: 'Dharun',
-      reportsTo: 5,
-      todayStatus: 'locked',
-      yesterdayStatus: 'locked',
-      todayTimesheet: null,
-    },
-  ]);
+
+  // ✅ FETCH TEAM MEMBERS' TIMESHEETS ON MOUNT
+  useEffect(() => {
+    if (user && user.role === 'Manager' && token) {
+      fetchTeamTimesheets();
+    }
+  }, [user, token]);
+
+
+  // ✅ FETCH CURRENT MONTH TIMESHEETS FOR ALL TEAM MEMBERS
+  const fetchTeamTimesheets = async () => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth() + 1;
+
+      // Get HR dashboard to find all employees
+      // In a real scenario, you'd have an API to get team members by supervisor
+      // For now, we'll construct the data from available endpoints
+      
+      // ✅ NOTE: You may need to add a new API endpoint to get team members
+      // GET /api/users/team/{supervisor_id}
+      
+      // For now, fetch current month data
+      const monthEntries = await timesheetService.getMonthTimesheets(token, year, month);
+      
+      // Format the data for display
+      const formattedTeam = formatTeamData(monthEntries);
+      setTeamMembers(formattedTeam);
+
+    } catch (err) {
+      console.error('Error fetching team timesheets:', err);
+      setError(err.detail || 'Failed to fetch team timesheet data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // ✅ FORMAT API DATA FOR MANAGER VIEW
+  const formatTeamData = (apiEntries) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const todayStr = today.toISOString().split('T')[0];
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    // Group entries by user_id (you may need to add user info to API response)
+    // This is a simplified version - adjust based on actual API response
+    const teamData = [];
+
+    // Find today's and yesterday's entries
+    const todayEntry = apiEntries.find(e => e.date === todayStr);
+    const yesterdayEntry = apiEntries.find(e => e.date === yesterdayStr);
+
+    return [{
+      id: user.id,
+      name: user.name,
+      reportsTo: user.supervisor_id,
+      todayStatus: todayEntry?.status || 'pending',
+      yesterdayStatus: yesterdayEntry?.status || 'pending',
+      todayTimesheet: todayEntry ? {
+        date: todayEntry.date,
+        startTime: todayEntry.start_time,
+        endTime: todayEntry.end_time,
+        hoursLogged: todayEntry.hours_logged ? (todayEntry.hours_logged / 60).toFixed(1) : 0,
+        activities: todayEntry.activities || []
+      } : null,
+    }];
+  };
+
+
+  // ✅ FETCH SPECIFIC EMPLOYEE TIMESHEETS (optional, for deeper view)
+  const fetchEmployeeDetails = async (employeeId) => {
+    try {
+      const year = new Date().getFullYear();
+      const month = new Date().getMonth() + 1;
+      
+      const entries = await timesheetService.getEmployeeTimesheets(token, employeeId, year, month);
+      return entries;
+    } catch (err) {
+      console.error('Error fetching employee details:', err);
+      return [];
+    }
+  };
+
 
   // Filter employees based on active tab
   const getFilteredEmployees = () => {
-    let filtered = allEmployees.filter(emp => emp.reportsTo === user.id);
+    let filtered = teamMembers;
 
     if (searchEmployee.trim()) {
       filtered = filtered.filter(emp =>
@@ -104,20 +126,21 @@ function ManagerTimesheetDashboard() {
     }
   };
 
+
   const filteredEmployees = getFilteredEmployees();
 
   // Stats
-  const allEmps = allEmployees.filter(e => e.reportsTo === user.id);
   const stats = {
-    updated: allEmps.filter(e => e.todayStatus === 'filled').length,
-    pending: allEmps.filter(e => e.todayStatus === 'pending').length,
-    locked: allEmps.filter(e => e.todayStatus === 'locked').length,
-    total: allEmps.length,
+    updated: teamMembers.filter(e => e.todayStatus === 'filled').length,
+    pending: teamMembers.filter(e => e.todayStatus === 'pending').length,
+    locked: teamMembers.filter(e => e.todayStatus === 'locked').length,
+    total: teamMembers.length,
   };
 
   const yesterdayStats = {
-    pending: allEmps.filter(e => e.yesterdayStatus === 'pending').length,
+    pending: teamMembers.filter(e => e.yesterdayStatus === 'pending').length,
   };
+
 
   // Styles
   const containerStyle = {
@@ -325,6 +348,40 @@ function ManagerTimesheetDashboard() {
     color: '#9CA3AF',
   };
 
+  const loadingStyle = {
+    textAlign: 'center',
+    padding: '40px',
+    color: '#666',
+    fontSize: '16px',
+  };
+
+  const errorStyle = {
+    backgroundColor: '#FEE2E2',
+    border: '1px solid #FECACA',
+    color: '#991B1B',
+    padding: '12px',
+    borderRadius: '6px',
+    marginBottom: '20px',
+  };
+
+
+  // ✅ CHECK AUTHORIZATION
+  if (!user || user.role !== 'Manager') {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+        ⛔ Access Denied: Only Managers can access this view
+      </div>
+    );
+  }
+
+  if (loading) {
+    return <div style={loadingStyle}>Loading team timesheet data...</div>;
+  }
+
+  if (error) {
+    return <div style={errorStyle}>⚠️ {error}</div>;
+  }
+
   return (
     <div style={containerStyle}>
       {/* Header */}
@@ -417,8 +474,10 @@ function ManagerTimesheetDashboard() {
                 </div>
                 {emp.todayTimesheet && (
                   <>
-                    <div style={hoursStyle}>⏰ {emp.todayTimesheet.hoursLogged}h ({emp.todayTimesheet.startTime} - {emp.todayTimesheet.endTime})</div>
-                    {emp.todayTimesheet.activities.length > 0 && (
+                    <div style={hoursStyle}>
+                      ⏰ {emp.todayTimesheet.hoursLogged}h ({emp.todayTimesheet.startTime} - {emp.todayTimesheet.endTime})
+                    </div>
+                    {emp.todayTimesheet.activities && emp.todayTimesheet.activities.length > 0 && (
                       <div style={activitiesContainerStyle}>
                         <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
                           📝 Activities:
@@ -430,9 +489,11 @@ function ManagerTimesheetDashboard() {
                             <div style={activitySlotTitleStyle}>🌅 Morning</div>
                             {emp.todayTimesheet.activities
                               .filter(a => a.slot === 'morning')
-                              .map(activity => (
-                                <div key={activity.id} style={activityItemStyle}>
-                                  <div style={activityTimeStyle}>🕐 {activity.startTime} - {activity.endTime}</div>
+                              .map((activity, idx) => (
+                                <div key={idx} style={activityItemStyle}>
+                                  <div style={activityTimeStyle}>
+                                    🕐 {activity.start_time || activity.startTime} - {activity.end_time || activity.endTime}
+                                  </div>
                                   <div style={activityDescStyle}>{activity.description}</div>
                                   <div style={activityOutputStyle}>Output: {activity.output}</div>
                                 </div>
@@ -446,9 +507,11 @@ function ManagerTimesheetDashboard() {
                             <div style={activitySlotTitleStyle}>🌄 Afternoon</div>
                             {emp.todayTimesheet.activities
                               .filter(a => a.slot === 'afternoon')
-                              .map(activity => (
-                                <div key={activity.id} style={activityItemStyle}>
-                                  <div style={activityTimeStyle}>🕐 {activity.startTime} - {activity.endTime}</div>
+                              .map((activity, idx) => (
+                                <div key={idx} style={activityItemStyle}>
+                                  <div style={activityTimeStyle}>
+                                    🕐 {activity.start_time || activity.startTime} - {activity.end_time || activity.endTime}
+                                  </div>
                                   <div style={activityDescStyle}>{activity.description}</div>
                                   <div style={activityOutputStyle}>Output: {activity.output}</div>
                                 </div>
@@ -481,7 +544,7 @@ function ManagerTimesheetDashboard() {
                   <span style={statusBadgeStyle('pending')}>⏳ Pending</span>
                 </div>
                 <div style={detailStyle}>
-                  <strong>Status:</strong> Timesheet for yesterday (Nov 4) not filled yet
+                  <strong>Status:</strong> Timesheet for yesterday not filled yet
                 </div>
                 <div style={detailStyle}>
                   <strong>Action:</strong> Follow up with employee to complete timesheet
@@ -511,7 +574,7 @@ function ManagerTimesheetDashboard() {
                   <strong>Status:</strong> Timesheet is locked (2+ days old with no entry)
                 </div>
                 <div style={detailStyle}>
-                  <strong>Note:</strong> Employee can request unlock from HR via email
+                  <strong>Note:</strong> Employee can request unlock from HR via the timesheet dashboard
                 </div>
               </div>
             ))
@@ -557,5 +620,6 @@ function ManagerTimesheetDashboard() {
     </div>
   );
 }
+
 
 export default ManagerTimesheetDashboard;

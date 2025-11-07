@@ -2,11 +2,14 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 from datetime import date, datetime
 
+
 # ============= AUTH SCHEMAS =============
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -17,12 +20,15 @@ class RegisterRequest(BaseModel):
     designation: Optional[str] = None
     supervisor_id: Optional[str] = None
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: "UserResponse"
 
+
 # ============= USER SCHEMAS =============
+
 
 class UserResponse(BaseModel):
     id: str
@@ -37,7 +43,9 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 # ============= LEAVE TYPE SCHEMAS =============
+
 
 class LeaveTypeResponse(BaseModel):
     id: int
@@ -48,7 +56,9 @@ class LeaveTypeResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 # ============= LEAVE BALANCE SCHEMAS =============
+
 
 class LeaveBalanceResponse(BaseModel):
     leave_type_id: int
@@ -60,13 +70,16 @@ class LeaveBalanceResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 # ============= LEAVE APPLICATION SCHEMAS =============
+
 
 class ApplyLeaveRequest(BaseModel):
     leave_type_id: int
     start_date: date
     end_date: date
     reason: str = Field(..., min_length=5, max_length=500)
+
 
 class LeaveApplicationResponse(BaseModel):
     id: str
@@ -86,10 +99,13 @@ class LeaveApplicationResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class ApproveRejectRequest(BaseModel):
     remarks: str = Field(..., min_length=5, max_length=500)
 
+
 # ============= NOTIFICATION SCHEMAS =============
+
 
 class NotificationResponse(BaseModel):
     id: int
@@ -102,16 +118,20 @@ class NotificationResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class NotificationsSummary(BaseModel):
     unread_count: int
     notifications: List[NotificationResponse]
 
+
 # ============= HR DASHBOARD SCHEMAS =============
+
 
 class DepartmentStats(BaseModel):
     department: str
     total_employees: int
     pending_approvals: int
+
 
 class HRStatistics(BaseModel):
     total_employees: int
@@ -123,6 +143,7 @@ class HRStatistics(BaseModel):
     pending_approvals_list: List[LeaveApplicationResponse]
     department_stats: List[DepartmentStats]
 
+
 class EmployeeBalanceResponse(BaseModel):
     employee_id: str
     employee_name: str
@@ -131,3 +152,107 @@ class EmployeeBalanceResponse(BaseModel):
     casual: dict  # {total, used, remaining}
     sick: dict
     earned: dict
+
+
+# =============== TIMESHEET SCHEMAS ✅ NEW ===============
+
+class TimesheetActivitySchema(BaseModel):
+    """Schema for timesheet activity"""
+    slot: str
+    description: str
+    output: Optional[str] = None
+    start_time: str
+    end_time: str
+
+
+class TimesheetEntryCreateSchema(BaseModel):
+    """Schema for creating timesheet entry"""
+    date: str
+    start_time: str
+    end_time: str
+    description: str
+    activities: Optional[List[TimesheetActivitySchema]] = []
+
+
+class TimesheetEntryResponseSchema(BaseModel):
+    """Schema for timesheet entry response"""
+    id: str
+    user_id: str
+    date: str
+    start_time: str
+    end_time: str
+    hours_logged: Optional[float] = None
+    description: Optional[str] = None
+    status: str
+    is_locked: bool
+    is_absent: bool
+    activities: Optional[List[TimesheetActivitySchema]] = []
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class TimesheetStatsSchema(BaseModel):
+    """Schema for timesheet statistics"""
+    filled_days: int
+    pending_days: int
+    locked_days: int
+    absent_days: int
+    total_days: int
+    total_hours: float
+
+
+class UnlockRequestCreateSchema(BaseModel):
+    """Schema for creating unlock request"""
+    timesheet_id: str
+    date: str
+    reason: str
+
+
+class UnlockRequestResponseSchema(BaseModel):
+    """Schema for unlock request response"""
+    id: str
+    timesheet_id: str
+    employee_name: str
+    employee_id: str
+    date: str
+    reason: str
+    status: str
+    requested_on: str
+    
+    class Config:
+        from_attributes = True
+
+
+class UnlockRequestApproveSchema(BaseModel):
+    """Schema for approving/rejecting unlock request"""
+    status: str  # "approved" or "rejected"
+    remarks: Optional[str] = None
+
+
+class HRTimesheetDashboardSchema(BaseModel):
+    """Schema for HR timesheet dashboard"""
+    total_employees: int
+    today_filled: int
+    today_pending: int
+    today_absent: int
+    pending_unlocks: int
+    month_summary: dict
+
+
+class TimesheetEmployeeResponseSchema(BaseModel):
+    """Schema for getting employee timesheet entries"""
+    id: str
+    employee_name: str
+    date: str
+    start_time: str
+    end_time: str
+    hours_logged: Optional[float] = None
+    description: Optional[str] = None
+    status: str
+    is_locked: bool
+    
+    class Config:
+        from_attributes = True

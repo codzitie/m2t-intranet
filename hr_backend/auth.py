@@ -8,21 +8,26 @@ from sqlalchemy.orm import Session
 from database import get_db, User
 from config import settings
 
+
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 # HTTP Bearer token scheme
 security = HTTPBearer()
+
 
 # Hash password
 def hash_password(password: str) -> str:
     """Convert plain password to hashed password"""
     return pwd_context.hash(password)
 
+
 # Verify password
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Check if plain password matches hashed password"""
     return pwd_context.verify(plain_password, hashed_password)
+
 
 # Create JWT access token
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -38,6 +43,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+
 # Decode and verify JWT token
 def decode_access_token(token: str) -> dict:
     """Decode JWT token and return payload"""
@@ -50,6 +56,7 @@ def decode_access_token(token: str) -> dict:
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
 
 # Get current user from token
 def get_current_user(
@@ -77,6 +84,7 @@ def get_current_user(
     
     return user
 
+
 # Get user permissions based on role
 def get_user_permissions(role: str) -> list:
     """Return list of permissions based on user role"""
@@ -85,7 +93,9 @@ def get_user_permissions(role: str) -> list:
         "Employee": [
             "apply_leave", 
             "view_own_balance", 
-            "view_own_history"
+            "view_own_history",
+            "fill_timesheet",          # ✅ NEW
+            "view_own_timesheet",      # ✅ NEW
         ],
         
         # Managers, Team Leads, etc. - can approve team leaves
@@ -94,7 +104,10 @@ def get_user_permissions(role: str) -> list:
             "view_own_balance", 
             "view_own_history", 
             "approve_team_leaves", 
-            "view_team"
+            "view_team",
+            "fill_timesheet",          # ✅ NEW
+            "view_own_timesheet",      # ✅ NEW
+            "view_team_timesheet",     # ✅ NEW
         ],
         
         "Team Lead": [
@@ -102,7 +115,10 @@ def get_user_permissions(role: str) -> list:
             "view_own_balance", 
             "view_own_history", 
             "approve_team_leaves", 
-            "view_team"
+            "view_team",
+            "fill_timesheet",          # ✅ NEW
+            "view_own_timesheet",      # ✅ NEW
+            "view_team_timesheet",     # ✅ NEW
         ],
         
         # Senior management - can approve all leaves
@@ -112,7 +128,10 @@ def get_user_permissions(role: str) -> list:
             "view_own_history", 
             "approve_team_leaves", 
             "view_team",
-            "view_all_leaves"
+            "view_all_leaves",
+            "fill_timesheet",          # ✅ NEW
+            "view_own_timesheet",      # ✅ NEW
+            "view_all_timesheets",     # ✅ NEW
         ],
         
         "Founder": [
@@ -121,7 +140,10 @@ def get_user_permissions(role: str) -> list:
             "view_own_history", 
             "approve_team_leaves", 
             "view_team",
-            "view_all_leaves"
+            "view_all_leaves",
+            "fill_timesheet",          # ✅ NEW
+            "view_own_timesheet",      # ✅ NEW
+            "view_all_timesheets",     # ✅ NEW
         ],
         
         # HR - full access
@@ -133,10 +155,16 @@ def get_user_permissions(role: str) -> list:
             "view_team", 
             "manage_hr", 
             "manage_policies", 
-            "view_all_leaves"
+            "view_all_leaves",
+            "fill_timesheet",          # ✅ NEW
+            "view_own_timesheet",      # ✅ NEW
+            "view_all_timesheets",     # ✅ NEW
+            "lock_timesheet",          # ✅ NEW
+            "approve_unlock_requests", # ✅ NEW
         ]
     }
     return permissions.get(role, [])  # Return empty list if role not found
+
 
 # Check if user has specific permission
 def require_permission(permission: str):

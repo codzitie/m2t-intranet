@@ -1,18 +1,41 @@
 import React, { useState, useEffect } from 'react';
+import { useUser } from '../../context/UserContext';
+import timesheetService from '../../services/timesheetService';
 
 function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
+  const { token } = useUser();
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [calculatedHours, setCalculatedHours] = useState('8');
   const [activityDescription, setActivityDescription] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [morning, setMorning] = useState('');
+  const [morningOutput, setMorningOutput] = useState('');
+  const [afternoon, setAfternoon] = useState('');
+  const [afternoonOutput, setAfternoonOutput] = useState('');
 
   useEffect(() => {
     if (isOpen && dayData) {
       setStartTime(dayData.startTime || '09:00');
       setEndTime(dayData.endTime || '17:00');
-      setActivityDescription(dayData.activityDescription || '');
+      setActivityDescription(dayData.description || '');
+      
+      if (dayData.activities && dayData.activities.length > 0) {
+        const morningActivity = dayData.activities.find(a => a.slot === 'morning');
+        const afternoonActivity = dayData.activities.find(a => a.slot === 'afternoon');
+        
+        if (morningActivity) {
+          setMorning(morningActivity.description);
+          setMorningOutput(morningActivity.output || '');
+        }
+        
+        if (afternoonActivity) {
+          setAfternoon(afternoonActivity.description);
+          setAfternoonOutput(afternoonActivity.output || '');
+        }
+      }
+      
       setError('');
     }
   }, [isOpen, dayData]);
@@ -81,7 +104,6 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
 
   const handleStartTimeChange = (e) => {
     const value = e.target.value;
-    // Only allow HH:MM format (24-hour)
     if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(value) || value === '') {
       setStartTime(value);
       setError('');
@@ -90,7 +112,6 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
 
   const handleEndTimeChange = (e) => {
     const value = e.target.value;
-    // Only allow HH:MM format (24-hour)
     if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(value) || value === '') {
       setEndTime(value);
       setError('');
@@ -102,6 +123,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     setError('');
   };
 
+  // ✅ SAVE TO API
   const handleSave = async () => {
     const validationError = validateForm();
     if (validationError) {
@@ -112,17 +134,63 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     setIsSubmitting(true);
 
     try {
-      await onSave({
-        date: dayData.date,
+      // ✅ CONVERT DATE STRING TO DATE OBJECT FIRST
+      const dateObj = typeof dayData.date === 'string' 
+        ? new Date(dayData.date + 'T00:00:00') 
+        : dayData.date;
+      
+      // ✅ Format date as YYYY-MM-DD
+      const dateStr = dateObj.toISOString().split('T')[0];
+
+      // ✅ Create activities
+      const activities = [];
+      
+      if (morning) {
+        activities.push({
+          slot: 'morning',
+          description: morning,
+          output: morningOutput,
+          start_time: startTime,
+          end_time: '12:30'
+        });
+      }
+      
+      if (afternoon) {
+        activities.push({
+          slot: 'afternoon',
+          description: afternoon,
+          output: afternoonOutput,
+          start_time: '13:30',
+          end_time: endTime
+        });
+      }
+
+      // ✅ Prepare API payload
+      const payload = {
+        date: dateStr,
+        start_time: startTime,
+        end_time: endTime,
+        description: activityDescription,
+        activities: activities
+      };
+
+      // ✅ Call API
+      const response = await timesheetService.createTimesheet(token, payload);
+
+      // ✅ Call parent callback
+      onSave({
+        date: dateObj,
         startTime: startTime,
         endTime: endTime,
         hours: parseFloat(calculatedHours),
-        activityDescription: activityDescription,
+        description: activityDescription,
+        activities: response.activities || activities,
+        ...response
       });
 
       onClose();
     } catch (err) {
-      setError('Failed to save timesheet entry. Please try again.');
+      setError(err.detail || 'Failed to save timesheet entry. Please try again.');
       console.error(err);
     } finally {
       setIsSubmitting(false);
@@ -133,6 +201,10 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     setStartTime('09:00');
     setEndTime('17:00');
     setActivityDescription('');
+    setMorning('');
+    setMorningOutput('');
+    setAfternoon('');
+    setAfternoonOutput('');
     setError('');
     onClose();
   };
@@ -237,7 +309,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     border: error ? '2px solid #EF4444' : '1px solid #d1d5db',
     borderRadius: '6px',
     boxSizing: 'border-box',
-    minHeight: '100px',
+    minHeight: '80px',
     resize: 'vertical',
     fontFamily: 'inherit',
     transition: 'all 0.3s ease',
@@ -322,6 +394,11 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
 
   if (!isOpen) return null;
 
+  // ✅ SAFE DATE CONVERSION FOR DISPLAY
+  const displayDate = typeof dayData?.date === 'string' 
+    ? new Date(dayData.date + 'T00:00:00')
+    : dayData?.date;
+
   return (
     <div style={overlayStyle} onClick={handleCancel}>
       <style>{`
@@ -345,7 +422,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
         {/* Date Display */}
         {dayData && (
           <div style={dateDisplayStyle}>
-            <strong>Date:</strong> {dayData.date.toLocaleDateString('en-IN', {
+            <strong>Date:</strong> {displayDate.toLocaleDateString('en-IN', {
               weekday: 'long',
               year: 'numeric',
               month: 'long',
@@ -354,7 +431,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
           </div>
         )}
 
-        {/* Start Time & End Time - Custom text input (24-hour) */}
+        {/* Start Time & End Time */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Working Hours (24-hour format) *</label>
           <div style={timeInputContainerStyle}>

@@ -107,6 +107,77 @@ class Notification(Base):
     # Relationships
     user = relationship("User", back_populates="notifications")
 
+# =============== TIMESHEET MODELS ===============
+
+class TimesheetEntry(Base):
+    __tablename__ = "timesheet_entries"
+    
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    start_time = Column(String, nullable=False)
+    end_time = Column(String, nullable=False)
+    hours_logged = Column(Integer, nullable=True)
+    description = Column(Text, nullable=True)
+    status = Column(String, default="pending")
+    is_absent = Column(Boolean, default=False)
+    is_locked = Column(Boolean, default=False)
+    locked_at = Column(DateTime, nullable=True)
+    locked_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    locker = relationship("User", foreign_keys=[locked_by])
+
+
+class TimesheetActivity(Base):
+    __tablename__ = "timesheet_activities"
+    
+    id = Column(String, primary_key=True)
+    timesheet_id = Column(String, ForeignKey("timesheet_entries.id"), nullable=False, index=True)
+    slot = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    output = Column(Text, nullable=True)
+    start_time = Column(String, nullable=True)
+    end_time = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    timesheet = relationship("TimesheetEntry", backref="activities")
+
+
+class TimesheetLockPolicy(Base):
+    __tablename__ = "timesheet_lock_policies"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    lock_after_days = Column(Integer, default=2)
+    lock_time = Column(String, default="23:59")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TimesheetUnlockRequest(Base):
+    __tablename__ = "timesheet_unlock_requests"
+    
+    id = Column(String, primary_key=True)
+    timesheet_id = Column(String, ForeignKey("timesheet_entries.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String, default="pending", index=True)
+    approved_by = Column(String, ForeignKey("users.id"), nullable=True)
+    approved_on = Column(DateTime, nullable=True)
+    remarks = Column(Text, nullable=True)
+    requested_on = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    timesheet = relationship("TimesheetEntry")
+    requester = relationship("User", foreign_keys=[user_id])
+    approver = relationship("User", foreign_keys=[approved_by])
 
 # Create all tables
 def init_db():
