@@ -15,7 +15,12 @@ from auth import (
     get_current_user, get_user_permissions, require_permission
 )
 from routes.timesheets import router as timesheet_router
+from tasks.scheduler import start_scheduler  # ✅ IMPORT SCHEDULER
+import logging
 
+# ✅ SETUP LOGGING
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -35,6 +40,23 @@ app.add_middleware(
 
 app.include_router(timesheet_router)
 
+# ============= STARTUP EVENT - START SCHEDULER =============
+@app.on_event("startup")
+def startup_event():
+    """Start scheduler on app startup"""
+    logger.info("🚀 Application starting...")
+    try:
+        start_scheduler()
+        logger.info("✅ Scheduler initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to start scheduler: {e}")
+
+# ============= SHUTDOWN EVENT =============
+@app.on_event("shutdown")
+def shutdown_event():
+    """Shutdown message"""
+    logger.info("🛑 Application shutting down...")
+
 # Helper function to calculate working days (excluding weekends)
 def calculate_working_days(start_date: date, end_date: date) -> int:
     """Calculate number of working days between two dates (excluding weekends)"""
@@ -46,7 +68,6 @@ def calculate_working_days(start_date: date, end_date: date) -> int:
             days += 1
         current += timedelta(days=1)
     return days
-
 
 # ============= AUTHENTICATION ENDPOINTS =============
 
@@ -105,7 +126,6 @@ def register_user(data: RegisterRequest, db: Session = Depends(get_db)):
         permissions=get_user_permissions(new_user.role)
     )
 
-
 @app.post("/api/auth/login", response_model=TokenResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     """Login and get JWT token"""
@@ -144,7 +164,6 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         )
     )
 
-
 @app.get("/api/auth/me", response_model=UserResponse)
 def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Get current logged-in user information"""
@@ -159,7 +178,6 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         permissions=get_user_permissions(current_user.role)
     )
 
-
 # ============= LEAVE TYPE ENDPOINTS =============
 
 @app.get("/api/leave/types", response_model=List[LeaveTypeResponse])
@@ -170,7 +188,6 @@ def get_leave_types(
     """Get all active leave types"""
     leave_types = db.query(LeaveType).filter(LeaveType.is_active == True).all()
     return leave_types
-
 
 # ============= LEAVE BALANCE ENDPOINTS =============
 
@@ -197,7 +214,6 @@ def get_leave_balance(
         ))
     
     return result
-
 
 # ============= LEAVE APPLICATION ENDPOINTS =============
 
@@ -289,7 +305,6 @@ def apply_leave(
         approved_on=new_leave.approved_on
     )
 
-
 @app.get("/api/leave/history", response_model=List[LeaveApplicationResponse])
 def get_leave_history(
     db: Session = Depends(get_db),
@@ -321,7 +336,6 @@ def get_leave_history(
     
     return result
 
-
 # ============= APPROVAL ENDPOINTS (Manager/Team Lead/CEO/HR) =============
 
 @app.get("/api/approvals/pending", response_model=List[LeaveApplicationResponse])
@@ -332,7 +346,6 @@ def get_pending_approvals(
     """Get pending leave approvals for manager/approver"""
     
     # Get team members (employees whose supervisor is current user)
-    # Explicitly join on user_id (not approved_by)
     leaves = db.query(LeaveApplication).join(
         User, 
         LeaveApplication.user_id == User.id
@@ -340,7 +353,6 @@ def get_pending_approvals(
         LeaveApplication.status == "Pending",
         User.supervisor_id == current_user.id
     ).order_by(LeaveApplication.applied_on.desc()).all()
-
     
     result = []
     for leave in leaves:
@@ -364,7 +376,6 @@ def get_pending_approvals(
         ))
     
     return result
-
 
 @app.put("/api/approvals/approve/{leave_id}", response_model=LeaveApplicationResponse)
 def approve_leave(
@@ -436,7 +447,6 @@ def approve_leave(
         approved_on=leave.approved_on
     )
 
-
 @app.put("/api/approvals/reject/{leave_id}", response_model=LeaveApplicationResponse)
 def reject_leave(
     leave_id: str,
@@ -496,7 +506,6 @@ def reject_leave(
         approved_on=leave.approved_on
     )
 
-
 # ============= NOTIFICATION ENDPOINTS =============
 
 @app.get("/api/notifications", response_model=NotificationsSummary)
@@ -518,7 +527,6 @@ def get_notifications(
         unread_count=unread_count,
         notifications=notifications
     )
-
 
 @app.put("/api/notifications/{notification_id}/read")
 def mark_notification_read(
@@ -542,7 +550,6 @@ def mark_notification_read(
     db.commit()
     
     return {"message": "Notification marked as read"}
-
 
 # ============= HR DASHBOARD ENDPOINTS =============
 
@@ -639,7 +646,6 @@ def get_hr_statistics(
         department_stats=list(dept_stats.values())
     )
 
-
 @app.get("/api/hr/all-leaves", response_model=List[LeaveApplicationResponse])
 def get_all_leaves(
     db: Session = Depends(get_db),
@@ -670,7 +676,6 @@ def get_all_leaves(
         ))
     
     return result
-
 
 @app.get("/api/hr/employee-balances", response_model=List[EmployeeBalanceResponse])
 def get_employee_balances(
@@ -712,7 +717,6 @@ def get_employee_balances(
     
     return result
 
-
 @app.get("/api/hr/employees", response_model=List[UserResponse])
 def get_all_employees(
     db: Session = Depends(get_db),
@@ -736,7 +740,6 @@ def get_all_employees(
     
     return result
 
-
 # ============= ROOT ENDPOINT =============
 
 @app.get("/")
@@ -748,7 +751,6 @@ def root():
         "docs": "/docs",
         "status": "running"
     }
-
 
 if __name__ == "__main__":
     import uvicorn

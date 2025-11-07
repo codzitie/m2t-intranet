@@ -14,12 +14,19 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
   const [morningOutput, setMorningOutput] = useState('');
   const [afternoon, setAfternoon] = useState('');
   const [afternoonOutput, setAfternoonOutput] = useState('');
+  const [isEditMode, setIsEditMode] = useState(false);
 
   useEffect(() => {
     if (isOpen && dayData) {
+      // ✅ CHECK IF EDITING
+      const hasExistingData = dayData.id && (dayData.startTime || dayData.description);
+      setIsEditMode(hasExistingData);
+
       setStartTime(dayData.startTime || '09:00');
       setEndTime(dayData.endTime || '17:00');
       setActivityDescription(dayData.description || '');
+      
+      console.log('📅 dayData.date:', dayData.date, 'Type:', typeof dayData.date);  // ✅ DEBUG
       
       if (dayData.activities && dayData.activities.length > 0) {
         const morningActivity = dayData.activities.find(a => a.slot === 'morning');
@@ -68,13 +75,26 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     }
   };
 
+  // ✅ VALIDATE TIME FORMAT (24-hour)
+  const isValidTime = (time) => {
+    return /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
+  };
+
   const validateForm = () => {
     if (!startTime.trim()) {
-      return 'Please enter start time';
+      return 'Please enter start time (HH:MM)';
+    }
+
+    if (!isValidTime(startTime)) {
+      return 'Invalid start time format. Use HH:MM (e.g., 09:00)';
     }
 
     if (!endTime.trim()) {
-      return 'Please enter end time';
+      return 'Please enter end time (HH:MM)';
+    }
+
+    if (!isValidTime(endTime)) {
+      return 'Invalid end time format. Use HH:MM (e.g., 17:00)';
     }
 
     if (!activityDescription.trim()) {
@@ -102,20 +122,17 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     return '';
   };
 
+  // ✅ HANDLE TIME INPUT WITH VALIDATION
   const handleStartTimeChange = (e) => {
     const value = e.target.value;
-    if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(value) || value === '') {
-      setStartTime(value);
-      setError('');
-    }
+    setStartTime(value);
+    setError('');
   };
 
   const handleEndTimeChange = (e) => {
     const value = e.target.value;
-    if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(value) || value === '') {
-      setEndTime(value);
-      setError('');
-    }
+    setEndTime(value);
+    setError('');
   };
 
   const handleActivityChange = (e) => {
@@ -123,7 +140,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     setError('');
   };
 
-  // ✅ SAVE TO API
+  // ✅ FIX: PROPER DATE HANDLING WITHOUT TIMEZONE ISSUES
   const handleSave = async () => {
     const validationError = validateForm();
     if (validationError) {
@@ -134,13 +151,19 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     setIsSubmitting(true);
 
     try {
-      // ✅ CONVERT DATE STRING TO DATE OBJECT FIRST
-      const dateObj = typeof dayData.date === 'string' 
-        ? new Date(dayData.date + 'T00:00:00') 
-        : dayData.date;
-      
-      // ✅ Format date as YYYY-MM-DD
-      const dateStr = dateObj.toISOString().split('T')[0];
+      // ✅ FIXED: Keep date as string, don't convert to Date object
+      let dateStr;
+      if (typeof dayData.date === 'string') {
+        dateStr = dayData.date;  // Already YYYY-MM-DD format
+      } else {
+        // Convert Date object to YYYY-MM-DD WITHOUT timezone conversion
+        const year = dayData.date.getFullYear();
+        const month = String(dayData.date.getMonth() + 1).padStart(2, '0');
+        const day = String(dayData.date.getDate()).padStart(2, '0');
+        dateStr = `${year}-${month}-${day}`;
+      }
+
+      console.log('📅 Sending date to API:', dateStr);  // ✅ DEBUG
 
       // ✅ Create activities
       const activities = [];
@@ -174,10 +197,16 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
         activities: activities
       };
 
-      // ✅ Call API
+      console.log('📤 API Payload:', payload);  // ✅ DEBUG
+
+      // ✅ Call API (ALWAYS CREATE/UPDATE via same endpoint)
       const response = await timesheetService.createTimesheet(token, payload);
 
-      // ✅ Call parent callback
+      console.log('📥 API Response:', response);  // ✅ DEBUG
+
+      // ✅ Call parent callback - create dateObj from the SAME dateStr
+      const dateObj = new Date(dateStr + 'T00:00:00');
+      
       onSave({
         date: dateObj,
         startTime: startTime,
@@ -206,6 +235,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     setAfternoon('');
     setAfternoonOutput('');
     setError('');
+    setIsEditMode(false);
     onClose();
   };
 
@@ -292,7 +322,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     boxSizing: 'border-box',
     transition: 'all 0.3s ease',
     fontFamily: 'monospace',
-    letterSpacing: '2px',
+    letterSpacing: '1px',
     textAlign: 'center',
   };
 
@@ -416,7 +446,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
 
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <h2 style={titleStyle}>📅 Log Timesheet Entry</h2>
+        <h2 style={titleStyle}>📅 {isEditMode ? 'Edit' : 'Log'} Timesheet Entry</h2>
         <p style={subtitleStyle}>Record your working hours and daily activities</p>
 
         {/* Date Display */}
@@ -475,7 +505,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
             </div>
           </div>
           <div style={{ fontSize: '11px', color: '#888', marginTop: '4px', textAlign: 'center' }}>
-            Format: HH:MM (e.g., 09:00, 17:30)
+            Format: HH:MM (e.g., 09:00, 17:30, 06:30)
           </div>
         </div>
 
@@ -501,7 +531,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
               onMouseLeave={(e) => !isSubmitting && (e.target.style.backgroundColor = 'white')}
               title="7 hours"
             >
-              09:00 - 16:00
+              09:00-16:00
             </button>
             <button
               style={quickTimeButtonStyle}
@@ -511,7 +541,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
               onMouseLeave={(e) => !isSubmitting && (e.target.style.backgroundColor = 'white')}
               title="8 hours"
             >
-              09:00 - 17:00
+              09:00-17:00
             </button>
             <button
               style={quickTimeButtonStyle}
@@ -521,7 +551,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
               onMouseLeave={(e) => !isSubmitting && (e.target.style.backgroundColor = 'white')}
               title="8.5 hours"
             >
-              09:00 - 17:30
+              09:00-17:30
             </button>
           </div>
         </div>
@@ -574,7 +604,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
             onMouseEnter={(e) => !isSubmitting && (e.target.style.backgroundColor = '#003380')}
             onMouseLeave={(e) => !isSubmitting && (e.target.style.backgroundColor = '#004aad')}
           >
-            {isSubmitting ? 'Saving...' : '✓ Save'}
+            {isSubmitting ? 'Saving...' : isEditMode ? '✓ Update' : '✓ Save'}
           </button>
         </div>
       </div>

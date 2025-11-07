@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TimesheetEntryModal from './TimesheetEntryModal';
 
-function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
+function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onReload }) {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [updatedData, setUpdatedData] = useState(timesheetData);
@@ -65,22 +65,45 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
     }
 
     setShowEntryModal(false);
+
+    // ✅ RELOAD FROM API AFTER SAVE
+    if (onReload) {
+      await onReload();
+    }
   };
 
-  // Handle date click
+  // Handle date click - WITH FUTURE DATE BLOCKING
   const handleDateClick = (dayData) => {
+    console.log('🖱️ Clicked date:', dayData?.day, 'isFuture:', dayData?.isFuture, 'isEditable:', dayData?.isEditable);
+    
     // ✅ Can't edit past months
     if (!isCurrentMonth) {
+      console.log('❌ Past month - blocked');
+      return;
+    }
+
+    // ✅ Can't click on future dates
+    if (dayData && dayData.isFuture) {
+      console.log('❌ Future date - blocked');
+      return;
+    }
+
+    // ✅ Can't click on weekends
+    if (dayData && dayData.isWeekend) {
+      console.log('❌ Weekend - blocked');
       return;
     }
 
     // ✅ Can only click on editable dates
-    if (dayData && (dayData.isEditable || dayData.status === 'filled' || dayData.status === 'pending')) {
+    if (dayData && dayData.isEditable) {
+      console.log('✅ Editable - opening modal');
       setSelectedDate({
         ...dayData,
         date: dayData.date,
       });
       setShowEntryModal(true);
+    } else {
+      console.log('❌ Not editable - blocked');
     }
   };
 
@@ -153,6 +176,10 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
     } else if (dayData.status === 'pending') {
       bgColor = '#FEF3C7';
       borderColor = '#FCD34D';
+    } else if (dayData.isFuture) {
+      // ✅ FUTURE DATES - GRAY
+      bgColor = '#F3F4F6';
+      textColor = '#9CA3AF';
     } else if (dayData.isToday) {
       bgColor = '#EFF6FF';
       borderColor = '#0284C7';
@@ -169,11 +196,11 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      cursor: isCurrentMonth && (dayData.isEditable || dayData.status === 'filled') ? 'pointer' : 'default',
+      cursor: isCurrentMonth && dayData.isEditable && !dayData.isFuture ? 'pointer' : 'default',
       transition: 'all 0.3s ease',
       color: textColor,
       opacity: isCurrentMonth ? 1 : 0.8,
-      pointerEvents: isCurrentMonth ? 'auto' : 'none',
+      pointerEvents: isCurrentMonth && !dayData.isFuture ? 'auto' : 'none',
     };
   };
 
@@ -216,6 +243,9 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
     } else if (dayData.status === 'pending') {
       bgColor = '#FCD34D';
       textColor = '#92400E';
+    } else if (dayData.isFuture) {
+      bgColor = '#E5E7EB';
+      textColor = '#6B7280';
     }
 
     return {
@@ -230,6 +260,7 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
     if (dayData.is_locked || dayData.isLocked) return 'Locked';
     if (dayData.status === 'filled') return 'Filled';
     if (dayData.status === 'pending') return 'Pending';
+    if (dayData.isFuture) return 'Future';
     if (dayData.isToday) return 'Today';
     return 'Editable';
   };
@@ -271,13 +302,14 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
               style={getDayCellStyle(dayData)}
               onClick={() => handleDateClick(dayData)}
               onMouseEnter={(e) => {
-                if (isCurrentMonth && dayData && (dayData.isEditable || dayData.status === 'filled')) {
+                // ✅ ONLY show hover for editable, non-future dates
+                if (isCurrentMonth && dayData && dayData.isEditable && !dayData.isFuture) {
                   e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                 }
               }}
               onMouseLeave={(e) => {
-                if (isCurrentMonth && dayData && (dayData.isEditable || dayData.status === 'filled')) {
+                if (isCurrentMonth && dayData && dayData.isEditable && !dayData.isFuture) {
                   e.currentTarget.style.boxShadow = 'none';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }
@@ -326,6 +358,10 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '20px', height: '20px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '4px' }} />
             <span style={{ fontSize: '14px', color: '#666' }}>Sunday (Non-working)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '20px', height: '20px', backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: '4px' }} />
+            <span style={{ fontSize: '14px', color: '#666' }}>Future</span>
           </div>
         </div>
       </div>

@@ -1,30 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUser } from '../../context/UserContext';
-
+import timesheetService from '../../services/timesheetService';
 
 function ActivityTracker() {
-  const { user } = useUser();
+  const { user, token } = useUser();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [activities, setActivities] = useState([
-    {
-      id: 1,
-      date: new Date().toISOString().split('T')[0],
-      slot: 'morning',
-      description: 'Attended project kickoff call',
-      start_time: '10:00',
-      end_time: '11:00',
-      output: 'Created meeting notes and action items list',
-    },
-    {
-      id: 2,
-      date: new Date().toISOString().split('T')[0],
-      slot: 'afternoon',
-      description: 'Analyzed competitor data',
-      start_time: '14:00',
-      end_time: '15:30',
-      output: 'Prepared competitor analysis document',
-    },
-  ]);
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     slot: 'morning',
@@ -54,6 +36,27 @@ function ActivityTracker() {
       color: '#DBEAFE',
       borderColor: '#0284C7',
     },
+  };
+
+  // ✅ FETCH ACTIVITIES FROM API WHEN DATE CHANGES
+  useEffect(() => {
+    if (token && selectedDate) {
+      fetchActivities();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, selectedDate]);
+
+  const fetchActivities = async () => {
+    setLoading(true);
+    try {
+      const data = await timesheetService.getActivitiesByDate(token, selectedDate);
+      setActivities(data);
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+      setActivities([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ✅ TODAY AND YESTERDAY CAN EDIT - OTHERS READ ONLY
@@ -107,20 +110,19 @@ function ActivityTracker() {
 
   // Get activities for selected date
   const getTodaysActivities = () => {
-    return activities.filter(a => new Date(a.date).toDateString() === new Date(selectedDate).toDateString());
+    return activities;
   };
 
   // Get activities by slot
   const getActivitiesBySlot = (slot) => {
-    return getTodaysActivities().filter(a => a.slot === slot);
+    return activities.filter(a => a.slot === slot);
   };
 
   // Calculate total activity time
   const calculateTotalActivityTime = () => {
-    const todaysActivities = getTodaysActivities();
     let totalMinutes = 0;
 
-    todaysActivities.forEach(activity => {
+    activities.forEach(activity => {
       const startMins = timeToMinutes(activity.start_time);
       const endMins = timeToMinutes(activity.end_time);
       totalMinutes += (endMins - startMins);
@@ -174,7 +176,7 @@ function ActivityTracker() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // ✅ HANDLE ADD/UPDATE
+  // ✅ HANDLE ADD/UPDATE - NOW SAVES TO DATABASE
   const handleSaveActivity = async () => {
     if (!validateForm()) {
       return;
@@ -188,24 +190,25 @@ function ActivityTracker() {
     setSubmitting(true);
 
     try {
+      const payload = {
+        date: selectedDate,
+        slot: formData.slot,
+        description: formData.description,
+        output: formData.output,
+        start_time: formData.start_time,
+        end_time: formData.end_time,
+      };
+
       if (editingId) {
-        // Update existing activity
-        setActivities(prev =>
-          prev.map(a =>
-            a.id === editingId
-              ? { ...a, ...formData, date: selectedDate }
-              : a
-          )
-        );
+        // ✅ UPDATE EXISTING ACTIVITY
+        await timesheetService.updateActivity(token, editingId, payload);
       } else {
-        // Add new activity
-        const newActivity = {
-          id: Date.now(),
-          date: selectedDate,
-          ...formData,
-        };
-        setActivities(prev => [newActivity, ...prev]);
+        // ✅ CREATE NEW ACTIVITY
+        await timesheetService.createActivity(token, payload);
       }
+
+      // ✅ REFRESH ACTIVITIES FROM API
+      await fetchActivities();
 
       // Reset form
       setFormData({
@@ -219,7 +222,7 @@ function ActivityTracker() {
       setErrors({});
     } catch (error) {
       console.error('Error saving activity:', error);
-      setErrors({ submit: 'Failed to save activity' });
+      setErrors({ submit: error.detail || 'Failed to save activity' });
     } finally {
       setSubmitting(false);
     }
@@ -236,18 +239,28 @@ function ActivityTracker() {
     setEditingId(activity.id);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this activity?')) {
-      setActivities(prev => prev.filter(a => a.id !== id));
-      if (editingId === id) {
-        setFormData({
-          slot: 'morning',
-          description: '',
-          start_time: '09:30',
-          end_time: '10:00',
-          output: '',
-        });
-        setEditingId(null);
+      try {
+        // ✅ DELETE FROM DATABASE
+        await timesheetService.deleteActivity(token, id);
+        
+        // ✅ REFRESH ACTIVITIES
+        await fetchActivities();
+        
+        if (editingId === id) {
+          setFormData({
+            slot: 'morning',
+            description: '',
+            start_time: '09:30',
+            end_time: '10:00',
+            output: '',
+          });
+          setEditingId(null);
+        }
+      } catch (error) {
+        console.error('Error deleting activity:', error);
+        alert('Failed to delete activity');
       }
     }
   };
@@ -264,7 +277,7 @@ function ActivityTracker() {
     setErrors({});
   };
 
-  // Styles
+  // Styles (same as before)
   const containerStyle = {
     backgroundColor: 'white',
     border: '1px solid #e5e7eb',
@@ -546,6 +559,20 @@ function ActivityTracker() {
     marginBottom: '16px',
     fontSize: '14px',
   };
+
+  const loadingStyle = {
+    textAlign: 'center',
+    padding: '40px',
+    color: '#666',
+  };
+
+  if (loading) {
+    return (
+      <div style={containerStyle}>
+        <div style={loadingStyle}>Loading activities...</div>
+      </div>
+    );
+  }
 
   return (
     <div style={containerStyle}>

@@ -46,6 +46,8 @@ function TimesheetDashboard() {
       setError('');
 
       const today = new Date();
+      console.log('📅 Today:', today, 'ISO:', today.toISOString());
+      
       const isCurrent = 
         currentMonth.getFullYear() === today.getFullYear() &&
         currentMonth.getMonth() === today.getMonth();
@@ -58,7 +60,12 @@ function TimesheetDashboard() {
 
       // ✅ Get timesheet entries
       const entries = await timesheetService.getMonthTimesheets(token, year, month);
-      console.log('✅ Got entries:', entries);
+      console.log('✅ Got entries from API:', entries);
+      
+      // ✅ DEBUG: Check what dates we got
+      entries.forEach((entry, index) => {
+        console.log(`📅 [${index}] Entry date: "${entry.date}" | Type: ${typeof entry.date}`);
+      });
       
       // ✅ GET STATS FROM API (Backend calculates with auto-lock logic)
       const statsData = await timesheetService.getTimesheetStats(token, year, month);
@@ -94,113 +101,142 @@ function TimesheetDashboard() {
     }
   };
 
-  // ============= FORMAT API DATA FOR FRONTEND =============
-  const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
-    const year = monthDate.getFullYear();
-    const month = monthDate.getMonth();
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-
-    const data = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // ✅ Calculate 2 days ago for display logic
-    const twoDaysAgo = new Date(today);
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
-    const entriesMap = {};
-    if (Array.isArray(apiEntries)) {
-      apiEntries.forEach(entry => {
-        entriesMap[entry.date] = entry;
-      });
-    }
-
-    for (let i = 1; i <= daysInMonth; i++) {
-      const currentDate = new Date(year, month, i);
-      const dateStr = currentDate.toISOString().split('T')[0];
-      
-      const isWeekend = currentDate.getDay() === 0;
-      const isToday = currentDate.toDateString() === today.toDateString();
-      const isPast = currentDate < today;
-
-      const apiEntry = entriesMap[dateStr];
-
-      let hoursLogged = null;
-      let status = 'future';
-      let isLocked = false;
-      let isEditable = false;
-      let description = '';
-      let activities = [];
-      let startTime = '';
-      let endTime = '';
-      let isAbsent = false;
-
-      if (isWeekend) {
-        // ✅ WEEKEND - NOT EDITABLE
-        status = 'weekend';
-        isLocked = false;
-      } else if (apiEntry) {
-        // ✅ HAS DATA FROM API
-        status = apiEntry.status;
-        isLocked = apiEntry.is_locked;
-        isAbsent = apiEntry.is_absent;
-        hoursLogged = apiEntry.hours_logged ? (apiEntry.hours_logged / 60).toFixed(1) : null;
-        description = apiEntry.description;
-        activities = apiEntry.activities || [];
-        startTime = apiEntry.start_time;
-        endTime = apiEntry.end_time;
-        isEditable = !isLocked;
-      } else if (currentDate <= today && !isWeekend) {
-        // ✅ NO DATA, BUT PAST/TODAY
-        if (currentDate < twoDaysAgo) {
-          // ✅ OLDER THAN 2 DAYS = AUTO-LOCKED (matches backend logic)
-          status = 'locked';
-          isLocked = true;
-          isEditable = false;
-        } else {
-          // ✅ 0-2 DAYS AGO = EDITABLE
-          status = 'pending';
-          isLocked = false;
-          isEditable = isCurrentMonth;
-        }
-      }
-
-      data.push({
-        id: apiEntry?.id,
-        date: currentDate,
-        day: i,
-        isWeekend,
-        isToday,
-        isPast,
-        hoursLogged,
-        status,
-        isEditable,
-        isLocked,
-        isAbsent,
-        description,
-        activities,
-        startTime,
-        endTime,
-      });
-    }
-
-    return data;
+  // ✅ RELOAD CALLBACK FOR CALENDAR
+  const reloadTimesheetData = async () => {
+    console.log('🔄 Reloading timesheet data...');
+    await loadTimesheetData();
   };
 
+  // ============= FORMAT API DATA FOR FRONTEND =============
+// ============= FORMAT API DATA FOR FRONTEND =============
+// ============= FORMAT API DATA FOR FRONTEND =============
+const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const lastDay = new Date(year, month + 1, 0);
+  const daysInMonth = lastDay.getDate();
+
+  const data = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // ✅ CREATE TODAY'S DATE STRING
+  const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  
+  // ✅ Calculate yesterday (1 day ago)
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayDateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+  const entriesMap = {};
+  if (Array.isArray(apiEntries)) {
+    apiEntries.forEach(entry => {
+      entriesMap[entry.date] = entry;
+    });
+  }
+
+  for (let i = 1; i <= daysInMonth; i++) {
+    const currentDate = new Date(year, month, i);
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+    
+    const isWeekend = currentDate.getDay() === 0;
+    const isToday = dateStr === todayDateStr;
+    const isYesterday = dateStr === yesterdayDateStr;
+    const isPast = dateStr < todayDateStr;
+    const isFuture = dateStr > todayDateStr;
+
+    const apiEntry = entriesMap[dateStr];
+
+    let hoursLogged = null;
+    let status = 'future';
+    let isLocked = false;
+    let isEditable = false;
+    let description = '';
+    let activities = [];
+    let startTime = '';
+    let endTime = '';
+    let isAbsent = false;
+
+    if (isWeekend) {
+      // ✅ WEEKENDS - NOT EDITABLE
+      status = 'weekend';
+      isLocked = false;
+      isEditable = false;
+    } else if (apiEntry) {
+      // ✅ HAS DATA FROM API
+      status = apiEntry.status;
+      isLocked = apiEntry.is_locked;
+      isAbsent = apiEntry.is_absent;
+      hoursLogged = apiEntry.hours_logged ? (apiEntry.hours_logged / 60).toFixed(1) : null;
+      description = apiEntry.description;
+      activities = apiEntry.activities || [];
+      startTime = apiEntry.start_time;
+      endTime = apiEntry.end_time;
+      isEditable = !isLocked && !isFuture;
+    } else if (isFuture) {
+      // ✅ FUTURE DATES - NOT EDITABLE
+      status = 'future';
+      isLocked = false;
+      isEditable = false;
+    } else if (isToday) {
+      // ✅ TODAY - EDITABLE, PENDING
+      status = 'pending';
+      isLocked = false;
+      isEditable = isCurrentMonth;
+    } else if (isYesterday) {
+      // ✅ YESTERDAY (1 day ago) - STILL EDITABLE, PENDING
+      status = 'pending';
+      isLocked = false;
+      isEditable = isCurrentMonth;
+    } else if (isPast && !isWeekend) {
+      // ✅ OLDER THAN 1 DAY - LOCKED
+      status = 'locked';
+      isLocked = true;
+      isEditable = false;
+    }
+
+    data.push({
+      id: apiEntry?.id,
+      date: currentDate,
+      day: i,
+      isWeekend,
+      isToday,
+      isPast,
+      isFuture,
+      hoursLogged,
+      status,
+      isEditable,
+      isLocked,
+      isAbsent,
+      description,
+      activities,
+      startTime,
+      endTime,
+    });
+  }
+
+  return data;
+};
+
+
+
   const handleCalendarDataUpdate = (updatedData) => {
+    console.log('📝 Calendar data updated:', updatedData);
     setTimesheetData(updatedData);
   };
 
   const goToPreviousMonth = () => {
+    console.log('⬅️ Going to previous month');
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
   };
 
   const goToNextMonth = () => {
+    console.log('➡️ Going to next month');
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
   };
 
   const goToCurrentMonth = () => {
+    console.log('📅 Going to current month');
     setCurrentMonth(new Date());
   };
 
@@ -583,6 +619,7 @@ function TimesheetDashboard() {
                 timesheetData={timesheetData} 
                 isCurrentMonth={isCurrentMonth}
                 onDataUpdate={handleCalendarDataUpdate}
+                onReload={reloadTimesheetData}
               />
             </div>
           )}

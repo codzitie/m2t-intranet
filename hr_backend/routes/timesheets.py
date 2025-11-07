@@ -87,15 +87,17 @@ def create_timesheet(
     
     # Update or create entry
     if existing:
+        print(f"🔄 UPDATING existing entry for {entry_date}")  # ✅ DEBUG LOG
         existing.start_time = start_time
         existing.end_time = end_time
         existing.hours_logged = hours_minutes
         existing.description = description
         existing.status = "filled"
-        existing.is_locked = False  # ✅ UNLOCK when filling
+        existing.is_locked = False
         existing.updated_at = datetime.utcnow()
         entry = existing
     else:
+        print(f"✅ CREATING new entry for {entry_date}")  # ✅ DEBUG LOG
         entry = TimesheetEntry(
             id=str(uuid.uuid4()),
             user_id=current_user.id,
@@ -108,13 +110,15 @@ def create_timesheet(
         )
         db.add(entry)
     
+    # ✅ DELETE OLD ACTIVITIES IF UPDATING
+    if existing:
+        db.query(TimesheetActivity).filter(
+            TimesheetActivity.timesheet_id == entry.id
+        ).delete()
+    
     # Handle activities
+    activities_list = []
     if activities:
-        if existing:
-            db.query(TimesheetActivity).filter(
-                TimesheetActivity.timesheet_id == entry.id
-            ).delete()
-        
         for activity in activities:
             new_activity = TimesheetActivity(
                 id=str(uuid.uuid4()),
@@ -126,10 +130,12 @@ def create_timesheet(
                 end_time=activity.get("end_time")
             )
             db.add(new_activity)
+            activities_list.append(new_activity)
     
     db.commit()
     db.refresh(entry)
     
+    # ✅ RETURN ACTIVITIES IN RESPONSE
     return {
         "id": entry.id,
         "user_id": entry.user_id,
@@ -140,8 +146,20 @@ def create_timesheet(
         "description": entry.description,
         "status": entry.status,
         "is_locked": entry.is_locked,
+        "activities": [  # ✅ ADDED THIS
+            {
+                "id": a.id,
+                "slot": a.slot,
+                "description": a.description,
+                "output": a.output,
+                "start_time": a.start_time,
+                "end_time": a.end_time
+            }
+            for a in activities_list
+        ],
         "message": "Timesheet entry saved successfully"
     }
+
 
 # ============= GET TIMESHEET FOR MONTH =============
 
@@ -207,7 +225,7 @@ def get_timesheet_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get timesheet statistics for current month with auto-locking logic"""
+    """Get timesheet statistics with auto-lock logic"""
     
     start_date = date(year, month, 1)
     if month == 12:
@@ -216,23 +234,15 @@ def get_timesheet_stats(
         end_date = date(year, month + 1, 1) - timedelta(days=1)
     
     today = date.today()
-    two_days_ago = today - timedelta(days=2)
+    
+    # ✅ CALCULATE YESTERDAY (1 day prior)
+    yesterday = today - timedelta(days=1)
     
     entries = db.query(TimesheetEntry).filter(
         TimesheetEntry.user_id == current_user.id,
         TimesheetEntry.date >= start_date,
         TimesheetEntry.date <= end_date
     ).all()
-    
-    # ✅ AUTO-LOCK LOGIC: Entries older than 2 days with no data
-    for entry in entries:
-        if (entry.date < two_days_ago and 
-            not entry.hours_logged and 
-            entry.status == "pending"):
-            entry.is_locked = True
-    
-    # ✅ COMMIT CHANGES (save to DB)
-    db.commit()
     
     filled = 0
     pending = 0
@@ -241,11 +251,11 @@ def get_timesheet_stats(
     total = 0
     
     for e in entries:
-        # ✅ Python weekday(): 6 = Sunday, 0-5 = Mon-Sat
+        # ✅ Skip weekends
         if e.date.weekday() == 6:
             continue
         
-        # Only count past/today
+        # ✅ Only count past/today
         if e.date > today:
             continue
         
@@ -258,7 +268,11 @@ def get_timesheet_stats(
         elif e.status == "filled" or e.hours_logged:
             filled += 1
         else:
-            pending += 1
+            # ✅ AUTO-LOCK LOGIC: Entries older than 1 day (yesterday and before)
+            if e.date < yesterday and not e.hours_logged:
+                locked += 1
+            else:
+                pending += 1
     
     total_hours = sum(e.hours_logged or 0 for e in entries)
     total_hours_formatted = minutes_to_hours(total_hours)
@@ -271,9 +285,7 @@ def get_timesheet_stats(
         "total_days": total,
         "total_hours": round(total_hours_formatted, 2)
     }
-
     
-
 
 # ============= GET EMPLOYEE TIMESHEETS (Manager/HR) =============
 
@@ -536,3 +548,238 @@ def get_hr_timesheet_dashboard(
         }
     
     return stats
+
+@router.post("/activities", status_code=status.HTTP_201_CREATED)
+def create_standalone_activity(
+    activity_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Create/update standalone activity
+    - If timesheet entry exists for date, append activity
+    - If not, create new pending entry and append activity
+    """
+    
+    date_str = activity_data.get("date")
+    entry_date = date.fromisoformat(date_str)
+    
+    # ✅ Get or create timesheet entry for this date
+    entry = db.query(TimesheetEntry).filter(
+        TimesheetEntry.user_id == current_user.id,
+        TimesheetEntry.date == entry_date
+    ).first()
+    
+    if not entry:
+        # ✅ Create minimal pending entry
+        entry = TimesheetEntry(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            date=entry_date,
+            status="pending",
+            start_time=None,
+            end_time=None
+        )
+        db.add(entry)
+        db.flush()
+    
+    # ✅ Create activity
+    activity = TimesheetActivity(
+        id=str(uuid.uuid4()),
+        timesheet_id=entry.id,
+        slot=activity_data.get("slot"),
+        description=activity_data.get("description"),
+        output=activity_data.get("output"),
+        start_time=activity_data.get("start_time"),
+        end_time=activity_data.get("end_time")
+    )
+    
+    db.add(activity)
+    db.commit()
+    db.refresh(activity)
+    
+    return {
+        "id": activity.id,
+        "timesheet_id": entry.id,
+        "slot": activity.slot,
+        "description": activity.description,
+        "output": activity.output,
+        "start_time": activity.start_time,
+        "end_time": activity.end_time,
+        "message": "Activity saved successfully"
+    }
+
+
+@router.get("/activities/{date_str}")
+def get_activities_by_date(
+    date_str: str,  # ✅ RENAMED from 'date' to 'date_str'
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all activities for a specific date"""
+    
+    # ✅ NOW THIS WORKS
+    entry_date = date.fromisoformat(date_str)
+    
+    entry = db.query(TimesheetEntry).filter(
+        TimesheetEntry.user_id == current_user.id,
+        TimesheetEntry.date == entry_date
+    ).first()
+    
+    if not entry:
+        return []
+    
+    activities = db.query(TimesheetActivity).filter(
+        TimesheetActivity.timesheet_id == entry.id
+    ).all()
+    
+    return [
+        {
+            "id": a.id,
+            "date": str(entry.date),
+            "slot": a.slot,
+            "description": a.description,
+            "output": a.output,
+            "start_time": a.start_time,
+            "end_time": a.end_time
+        }
+        for a in activities
+    ]
+
+
+@router.put("/activities/{activity_id}")
+def update_activity(
+    activity_id: str,
+    activity_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update an existing activity"""
+    
+    activity = db.query(TimesheetActivity).filter(
+        TimesheetActivity.id == activity_id
+    ).first()
+    
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    
+    # ✅ Update fields
+    activity.slot = activity_data.get("slot", activity.slot)
+    activity.description = activity_data.get("description", activity.description)
+    activity.output = activity_data.get("output", activity.output)
+    activity.start_time = activity_data.get("start_time", activity.start_time)
+    activity.end_time = activity_data.get("end_time", activity.end_time)
+    
+    db.commit()
+    db.refresh(activity)
+    
+    return {
+        "id": activity.id,
+        "message": "Activity updated successfully"
+    }
+
+
+@router.delete("/activities/{activity_id}")
+def delete_activity(
+    activity_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete an activity"""
+    
+    activity = db.query(TimesheetActivity).filter(
+        TimesheetActivity.id == activity_id
+    ).first()
+    
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    
+    db.delete(activity)
+    db.commit()
+    
+    return {"message": "Activity deleted successfully"}
+
+
+
+
+# ============= GET TEAM MEMBERS' TIMESHEETS (Manager Only) =============
+
+@router.get("/team/{year}/{month}")
+def get_team_timesheets(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    ✅ GET ALL TEAM MEMBERS' TIMESHEETS
+    - Managers, Team Leads, and above can access
+    - Returns timesheets for all employees reporting to this user
+    """
+    
+    # ✅ ALLOW MULTIPLE ROLES
+    ALLOWED_ROLES = ['Manager', 'Team Lead', 'CEO', 'Founder', 'HR']
+    
+    if current_user.role not in ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Only {', '.join(ALLOWED_ROLES)} can access team timesheets"
+        )
+    
+    # ✅ GET ALL EMPLOYEES REPORTING TO THIS USER
+    team_members = db.query(User).filter(
+        User.supervisor_id == current_user.id
+    ).all()
+    
+    if not team_members:
+        return []
+    
+    # ✅ GET FIRST AND LAST DAY OF MONTH
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end_date = date(year, month + 1, 1) - timedelta(days=1)
+    
+    # ✅ GET TIMESHEETS FOR ALL TEAM MEMBERS
+    result = []
+    
+    for member in team_members:
+        entries = db.query(TimesheetEntry).filter(
+            TimesheetEntry.user_id == member.id,
+            TimesheetEntry.date >= start_date,
+            TimesheetEntry.date <= end_date
+        ).all()
+        
+        result.append({
+            "user_id": member.id,
+            "name": member.name,
+            "email": member.email,
+            "designation": member.designation,
+            "entries": [
+                {
+                    "id": entry.id,
+                    "date": str(entry.date),
+                    "status": entry.status,
+                    "is_locked": entry.is_locked,
+                    "start_time": entry.start_time,
+                    "end_time": entry.end_time,
+                    "hours_logged": minutes_to_hours(entry.hours_logged) if entry.hours_logged else 0,
+                    "description": entry.description,
+                    "activities": [
+                        {
+                            "id": activity.id,
+                            "slot": activity.slot,
+                            "description": activity.description,
+                            "output": activity.output,
+                            "start_time": activity.start_time,
+                            "end_time": activity.end_time
+                        }
+                        for activity in entry.activities
+                    ] if entry.activities else []
+                }
+                for entry in entries
+            ]
+        })
+    
+    return result
