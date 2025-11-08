@@ -77,12 +77,30 @@ const timesheetService = {
     }
   },
 
-  // ============= ✅ GET TEAM TIMESHEETS (Manager Only) =============
+  // ============= GET TEAM TIMESHEETS (Manager Only) =============
   
   getTeamTimesheets: async (token, year, month) => {
     try {
       const response = await axios.get(
         `${API_BASE_URL}/timesheets/team/${year}/${month}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
+
+  // ============= ✅ GET TODAY STATUS FOR ALL EMPLOYEES (HR Only) =============
+  
+  getTodayStatusAllEmployees: async (token) => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/timesheets/hr/today-status`,
         {
           headers: {
             'Authorization': `Bearer ${token}`

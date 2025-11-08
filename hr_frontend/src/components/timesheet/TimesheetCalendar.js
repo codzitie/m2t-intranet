@@ -266,21 +266,30 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
   };
 
   // ✅ GET HOURS DISPLAY VALUE
-  const getHoursDisplay = (dayData) => {
-    if (dayData.is_absent || dayData.isAbsent) {
-      return null;
-    }
-
-    if (dayData.hours_logged) {
-      return ((dayData.hours_logged / 60).toFixed(1)) + 'h';
-    }
-
-    if (dayData.hoursLogged) {
-      return dayData.hoursLogged + 'h';
-    }
-
+// ✅ FIXED VERSION
+const getHoursDisplay = (dayData) => {
+  if (dayData.is_absent || dayData.isAbsent) {
     return null;
-  };
+  }
+
+  // ✅ hoursLogged is ALREADY in hours (converted in formatApiDataForFrontend)
+  if (dayData.hoursLogged) {
+    console.log('✅ Using hoursLogged:', dayData.hoursLogged);
+    return dayData.hoursLogged + 'h';
+  }
+
+  // ✅ If hours_logged exists (from API), it's in minutes - convert it
+  if (dayData.hours_logged) {
+    const converted = (dayData.hours_logged / 60).toFixed(1);
+    console.log('✅ Using hours_logged (converted):', converted);
+    return converted + 'h';
+  }
+
+  console.log('❌ No hours data found');
+  return null;
+};
+
+
 
   return (
     <>

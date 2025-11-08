@@ -196,7 +196,7 @@ def get_month_timesheets(
             "date": str(entry.date),
             "start_time": entry.start_time,
             "end_time": entry.end_time,
-            "hours_logged": minutes_to_hours(entry.hours_logged) if entry.hours_logged else 0,
+            "hours_logged": entry.hours_logged if entry.hours_logged else 0,
             "description": entry.description,
             "status": entry.status,
             "is_locked": entry.is_locked,  # ✅ NOW RETURNS LOCKED STATUS
@@ -780,6 +780,50 @@ def get_team_timesheets(
                 }
                 for entry in entries
             ]
+        })
+    
+    return result
+
+
+@router.get("/hr/today-status")
+def get_today_status_all_employees(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("manage_hr"))
+):
+    """
+    ✅ GET TODAY'S STATUS FOR ALL EMPLOYEES (HR only)
+    Returns which employees have filled today's timesheet
+    """
+    today = date.today()
+    
+    # Get all employees
+    all_employees = db.query(User).filter(User.role.in_(['Employee', 'Manager', 'Team Lead'])).all()
+    
+    result = []
+    
+    for employee in all_employees:
+        # Check if entry exists for today
+        today_entry = db.query(TimesheetEntry).filter(
+            TimesheetEntry.user_id == employee.id,
+            TimesheetEntry.date == today
+        ).first()
+        
+        # Check yesterday
+        yesterday = today - timedelta(days=1)
+        yesterday_entry = db.query(TimesheetEntry).filter(
+            TimesheetEntry.user_id == employee.id,
+            TimesheetEntry.date == yesterday
+        ).first()
+        
+        result.append({
+            "user_id": employee.id,
+            "name": employee.name,
+            "email": employee.email,
+            "designation": employee.designation,
+            "today_status": today_entry.status if today_entry else 'pending',
+            "yesterday_status": yesterday_entry.status if yesterday_entry else 'pending',
+            "today_hours": minutes_to_hours(today_entry.hours_logged) if today_entry and today_entry.hours_logged else 0,
+            "is_locked_today": today_entry.is_locked if today_entry else False,
         })
     
     return result

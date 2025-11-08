@@ -108,8 +108,6 @@ function TimesheetDashboard() {
   };
 
   // ============= FORMAT API DATA FOR FRONTEND =============
-// ============= FORMAT API DATA FOR FRONTEND =============
-// ============= FORMAT API DATA FOR FRONTEND =============
 const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -127,6 +125,10 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayDateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+  // ✅ PAYROLL PERIOD CHECK: If today is 25th or later, unlock remaining days of month
+  const currentDayOfMonth = today.getDate();
+  const isPayrollPeriod = currentDayOfMonth >= 25;
 
   const entriesMap = {};
   if (Array.isArray(apiEntries)) {
@@ -146,6 +148,9 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
     const isFuture = dateStr > todayDateStr;
 
     const apiEntry = entriesMap[dateStr];
+
+    // ✅ PAYROLL UNLOCK: If today >= 25th and viewing current month, unlock 26-31
+    const isPayrollUnlocked = isCurrentMonth && isPayrollPeriod && i >= 26 && i <= daysInMonth;
 
     let hoursLogged = null;
     let status = 'future';
@@ -172,12 +177,27 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
       activities = apiEntry.activities || [];
       startTime = apiEntry.start_time;
       endTime = apiEntry.end_time;
+      
+      // ✅ PAYROLL UNLOCK: Even if locked by system, unlock if in payroll period
+      if (isPayrollUnlocked && isLocked && !isAbsent) {
+        isLocked = false;
+        status = 'pending';
+      }
+      
       isEditable = !isLocked && !isFuture;
     } else if (isFuture) {
-      // ✅ FUTURE DATES - NOT EDITABLE
-      status = 'future';
-      isLocked = false;
-      isEditable = false;
+      // ✅ FUTURE DATES
+      if (isPayrollUnlocked) {
+        // ✅ PAYROLL PERIOD: Unlock future dates 26-31
+        status = 'pending';
+        isLocked = false;
+        isEditable = true;
+      } else {
+        // ✅ NORMAL FUTURE: Not editable
+        status = 'future';
+        isLocked = false;
+        isEditable = false;
+      }
     } else if (isToday) {
       // ✅ TODAY - EDITABLE, PENDING
       status = 'pending';
@@ -189,10 +209,18 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
       isLocked = false;
       isEditable = isCurrentMonth;
     } else if (isPast && !isWeekend) {
-      // ✅ OLDER THAN 1 DAY - LOCKED
-      status = 'locked';
-      isLocked = true;
-      isEditable = false;
+      // ✅ OLDER THAN 1 DAY
+      if (isPayrollUnlocked) {
+        // ✅ PAYROLL PERIOD: Unlock if 26-31
+        status = 'pending';
+        isLocked = false;
+        isEditable = true;
+      } else {
+        // ✅ NORMAL PAST: LOCKED
+        status = 'locked';
+        isLocked = true;
+        isEditable = false;
+      }
     }
 
     data.push({
@@ -212,11 +240,13 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
       activities,
       startTime,
       endTime,
+      isPayrollUnlocked, // ✅ ADD FLAG
     });
   }
 
   return data;
 };
+
 
 
 

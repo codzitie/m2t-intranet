@@ -23,57 +23,64 @@ function AdminTimesheetDashboard({ onBack }) {
 
 
   // ✅ FETCH HR DASHBOARD DATA
-  const fetchHRDashboardData = async () => {
-    setLoading(true);
-    setError('');
+  // ✅ FETCH HR DASHBOARD DATA
+const fetchHRDashboardData = async () => {
+  setLoading(true);
+  setError('');
+  
+  try {
+    // ✅ Get today's status for all employees
+    const todayStatus = await timesheetService.getTodayStatusAllEmployees(token);
     
-    try {
-      // ✅ Get HR Dashboard (all employees' stats)
-      const hrDashboard = await timesheetService.getHRDashboard(token);
-      
-      // ✅ Get pending unlock requests
-      const unlocks = await timesheetService.getPendingUnlockRequests(token);
+    // ✅ Get HR Dashboard for monthly stats
+    const hrDashboard = await timesheetService.getHRDashboard(token);
+    
+    // ✅ Get pending unlock requests
+    const unlocks = await timesheetService.getPendingUnlockRequests(token);
 
-      // Format employee data from dashboard
-      const employees = formatEmployeeData(hrDashboard);
-      setAllEmployees(employees);
-      setUnlockRequests(unlocks || []);
+    // Format employee data
+    const employees = formatEmployeeData(todayStatus, hrDashboard);
+    setAllEmployees(employees);
+    setUnlockRequests(unlocks || []);
 
-    } catch (err) {
-      console.error('Error fetching HR dashboard data:', err);
-      setError(err.detail || 'Failed to fetch dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  } catch (err) {
+    console.error('Error fetching HR dashboard data:', err);
+    setError(err.detail || 'Failed to fetch dashboard data');
+  } finally {
+    setLoading(false);
+  }
+};
 
+// ✅ FORMAT HR DASHBOARD DATA FOR DISPLAY
+const formatEmployeeData = (todayStatus, hrDashboard) => {
+  const monthSummary = hrDashboard.month_summary || {};
 
-  // ✅ FORMAT HR DASHBOARD DATA FOR DISPLAY
-  const formatEmployeeData = (hrDashboard) => {
-    const monthSummary = hrDashboard.month_summary || {};
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+  return todayStatus.map((employee, index) => {
+    const monthData = monthSummary[employee.name] || { 
+      filled: 0, 
+      pending: 0, 
+      locked: 0, 
+      total_hours: 0 
+    };
+    
+    return {
+      id: employee.user_id,
+      name: employee.name,
+      email: employee.email,
+      designation: employee.designation,
+      // ✅ NOW CORRECTLY SHOWS TODAY'S STATUS
+      todayStatus: employee.today_status,
+      yesterdayStatus: employee.yesterday_status,
+      todayHours: employee.today_hours || 0,
+      totalHours: monthData.total_hours || 0,
+      filledDays: monthData.filled || 0,
+      pendingDays: monthData.pending || 0,
+      lockedDays: monthData.locked || 0,
+      isLockedToday: employee.is_locked_today,
+    };
+  });
+};
 
-    const employees = [];
-
-    for (const employeeName in monthSummary) {
-      const empData = monthSummary[employeeName];
-      
-      employees.push({
-        id: employees.length + 1,
-        name: employeeName,
-        todayStatus: empData.filled > 0 ? 'filled' : 'pending',
-        yesterdayStatus: empData.filled > 0 ? 'filled' : 'pending',
-        totalHours: empData.total_hours,
-        filledDays: empData.filled || 0,
-        pendingDays: empData.pending || 0,
-        lockedDays: empData.locked || 0,
-        todayTimesheet: null // Would need individual endpoint for detail
-      });
-    }
-
-    return employees;
-  };
 
 
   // ✅ APPROVE UNLOCK REQUEST
@@ -502,7 +509,7 @@ function AdminTimesheetDashboard({ onBack }) {
                   <div style={employeeNameStyle}>{emp.name}</div>
                   <span style={statusBadgeStyle('filled')}>✅ Updated</span>
                 </div>
-                <div style={hoursStyle}>⏰ {emp.totalHours.toFixed(1)}h</div>
+                <div style={hoursStyle}>⏰ {emp.todayHours.toFixed(1)}h</div>
                 <div style={detailStyle}>
                   <strong>Filled Days:</strong> {emp.filledDays}
                 </div>
