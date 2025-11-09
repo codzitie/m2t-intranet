@@ -34,6 +34,8 @@ class User(Base):
     join_date = Column(Date)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    two_fa_code = Column(String(6), nullable=True)
+    two_fa_code_expires = Column(DateTime, nullable=True)
     
     # Relationships
     leave_balances = relationship("LeaveBalance", back_populates="user")

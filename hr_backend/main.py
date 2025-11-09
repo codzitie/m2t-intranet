@@ -12,10 +12,11 @@ from schemas import (
 )
 from auth import (
     hash_password, verify_password, create_access_token, 
-    get_current_user, get_user_permissions, require_permission
+    get_current_user, get_user_permissions, require_permission,
+    router as auth_router  # ✅ ADD THIS
 )
 from routes.timesheets import router as timesheet_router
-from tasks.scheduler import start_scheduler  # ✅ IMPORT SCHEDULER
+from tasks.scheduler import start_scheduler
 import logging
 
 # ✅ SETUP LOGGING
@@ -29,16 +30,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Configuration - Allow frontend to connect
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000","http://localhost:5173"],  # React app URL
+    allow_origins=["http://localhost:3000","http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ✅ REGISTER ROUTERS
 app.include_router(timesheet_router)
+app.include_router(auth_router)  # ✅ ADD THIS LINE
+
 
 # ============= STARTUP EVENT - START SCHEDULER =============
 @app.on_event("startup")

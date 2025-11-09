@@ -2,32 +2,33 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from database import get_db, User
 from config import settings
-
+import random
+import string
+from email_service import send_otp_email
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
 # HTTP Bearer token scheme
 security = HTTPBearer()
 
+# Router for auth endpoints
+router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 # Hash password
 def hash_password(password: str) -> str:
     """Convert plain password to hashed password"""
     return pwd_context.hash(password)
 
-
 # Verify password
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Check if plain password matches hashed password"""
     return pwd_context.verify(plain_password, hashed_password)
-
 
 # Create JWT access token
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -43,7 +44,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-
 # Decode and verify JWT token
 def decode_access_token(token: str) -> dict:
     """Decode JWT token and return payload"""
@@ -56,7 +56,6 @@ def decode_access_token(token: str) -> dict:
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
 
 # Get current user from token
 def get_current_user(
@@ -84,87 +83,43 @@ def get_current_user(
     
     return user
 
-
 # Get user permissions based on role
 def get_user_permissions(role: str) -> list:
     """Return list of permissions based on user role"""
     permissions = {
-        # Regular employees
         "Employee": [
-            "apply_leave", 
-            "view_own_balance", 
-            "view_own_history",
-            "fill_timesheet",          # ✅ NEW
-            "view_own_timesheet",      # ✅ NEW
+            "apply_leave", "view_own_balance", "view_own_history",
+            "fill_timesheet", "view_own_timesheet",
         ],
-        
-        # Managers, Team Leads, etc. - can approve team leaves
         "Manager": [
-            "apply_leave", 
-            "view_own_balance", 
-            "view_own_history", 
-            "approve_team_leaves", 
-            "view_team",
-            "fill_timesheet",          # ✅ NEW
-            "view_own_timesheet",      # ✅ NEW
-            "view_team_timesheet",     # ✅ NEW
+            "apply_leave", "view_own_balance", "view_own_history", 
+            "approve_team_leaves", "view_team",
+            "fill_timesheet", "view_own_timesheet", "view_team_timesheet",
         ],
-        
         "Team Lead": [
-            "apply_leave", 
-            "view_own_balance", 
-            "view_own_history", 
-            "approve_team_leaves", 
-            "view_team",
-            "fill_timesheet",          # ✅ NEW
-            "view_own_timesheet",      # ✅ NEW
-            "view_team_timesheet",     # ✅ NEW
+            "apply_leave", "view_own_balance", "view_own_history", 
+            "approve_team_leaves", "view_team",
+            "fill_timesheet", "view_own_timesheet", "view_team_timesheet",
         ],
-        
-        # Senior management - can approve all leaves
         "CEO": [
-            "apply_leave", 
-            "view_own_balance", 
-            "view_own_history", 
-            "approve_team_leaves", 
-            "view_team",
-            "view_all_leaves",
-            "fill_timesheet",          # ✅ NEW
-            "view_own_timesheet",      # ✅ NEW
-            "view_all_timesheets",     # ✅ NEW
+            "apply_leave", "view_own_balance", "view_own_history", 
+            "approve_team_leaves", "view_team", "view_all_leaves",
+            "fill_timesheet", "view_own_timesheet", "view_all_timesheets",
         ],
-        
         "Founder": [
-            "apply_leave", 
-            "view_own_balance", 
-            "view_own_history", 
-            "approve_team_leaves", 
-            "view_team",
-            "view_all_leaves",
-            "fill_timesheet",          # ✅ NEW
-            "view_own_timesheet",      # ✅ NEW
-            "view_all_timesheets",     # ✅ NEW
+            "apply_leave", "view_own_balance", "view_own_history", 
+            "approve_team_leaves", "view_team", "view_all_leaves",
+            "fill_timesheet", "view_own_timesheet", "view_all_timesheets",
         ],
-        
-        # HR - full access
         "HR": [
-            "apply_leave", 
-            "view_own_balance", 
-            "view_own_history", 
-            "approve_team_leaves", 
-            "view_team", 
-            "manage_hr", 
-            "manage_policies", 
-            "view_all_leaves",
-            "fill_timesheet",          # ✅ NEW
-            "view_own_timesheet",      # ✅ NEW
-            "view_all_timesheets",     # ✅ NEW
-            "lock_timesheet",          # ✅ NEW
-            "approve_unlock_requests", # ✅ NEW
+            "apply_leave", "view_own_balance", "view_own_history", 
+            "approve_team_leaves", "view_team", "manage_hr", 
+            "manage_policies", "view_all_leaves",
+            "fill_timesheet", "view_own_timesheet", "view_all_timesheets",
+            "lock_timesheet", "approve_unlock_requests",
         ]
     }
-    return permissions.get(role, [])  # Return empty list if role not found
-
+    return permissions.get(role, [])
 
 # Check if user has specific permission
 def require_permission(permission: str):
@@ -178,3 +133,102 @@ def require_permission(permission: str):
             )
         return current_user
     return permission_checker
+
+# ============= OTP HELPER FUNCTIONS =============
+
+def generate_otp() -> str:
+    """Generate 6-digit OTP"""
+    return ''.join(random.choices(string.digits, k=6))
+
+# ============= OTP LOGIN ENDPOINTS =============
+
+@router.post("/login-otp")
+def login_with_otp(login_data: dict, db: Session = Depends(get_db)):
+    """STEP 1: Verify email + password, send OTP"""
+    email = login_data.get("email", "").lower().strip()
+    password = login_data.get("password", "")
+    
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(password, user.password_hash):  # ✅ FIXED: password_hash
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    otp = generate_otp()
+    user.two_fa_code = otp
+    user.two_fa_code_expires = datetime.utcnow() + timedelta(minutes=5)
+    db.commit()
+    
+    send_otp_email(user.email, otp, user.name)
+    
+    return {"message": "OTP sent to your email", "email": user.email, "requires_otp": True}
+
+
+@router.post("/verify-otp")
+def verify_otp(verify_data: dict, db: Session = Depends(get_db)):
+    """STEP 2: Verify OTP and return JWT token"""
+    email = verify_data.get("email", "").lower().strip()
+    otp = verify_data.get("otp", "").strip()
+    
+    if not email or not otp:
+        raise HTTPException(status_code=400, detail="Email and OTP are required")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    if not user.two_fa_code:
+        raise HTTPException(status_code=400, detail="No OTP found. Please request a new one.")
+    
+    if datetime.utcnow() > user.two_fa_code_expires:
+        user.two_fa_code = None
+        user.two_fa_code_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")
+    
+    if user.two_fa_code != otp:
+        raise HTTPException(status_code=401, detail="Invalid OTP code")
+    
+    user.two_fa_code = None
+    user.two_fa_code_expires = None
+    db.commit()
+    
+    token_data = {"sub": user.id}
+    access_token = create_access_token(token_data)
+    
+    # ✅ ADD PERMISSIONS TO RESPONSE
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "designation": user.designation,
+            "permissions": get_user_permissions(user.role)  # ✅ ADD THIS
+        }
+    }
+
+
+@router.post("/resend-otp")
+def resend_otp(resend_data: dict, db: Session = Depends(get_db)):
+    """RESEND OTP"""
+    email = resend_data.get("email", "").lower().strip()
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    otp = generate_otp()
+    user.two_fa_code = otp
+    user.two_fa_code_expires = datetime.utcnow() + timedelta(minutes=5)
+    db.commit()
+    
+    send_otp_email(user.email, otp, user.name)
+    
+    return {"message": "New OTP sent to your email", "email": user.email}

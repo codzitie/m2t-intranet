@@ -1,11 +1,11 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { mockLogin, logout as apiLogout, getCurrentUser } from '../services/api';
+import { logout as apiLogout, getCurrentUser } from '../services/api';
 
 export const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);  // ✅ ADD THIS
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -13,29 +13,32 @@ export const UserProvider = ({ children }) => {
   // Initialize user from localStorage on mount
   useEffect(() => {
     const storedUser = getCurrentUser();
-    const storedToken = localStorage.getItem('token');  // ✅ GET TOKEN
+    const storedToken = localStorage.getItem('token');
     
     if (storedUser && storedToken) {
       setUser(storedUser);
-      setToken(storedToken);  // ✅ SET TOKEN
+      setToken(storedToken);
       setIsAuthenticated(true);
     }
     setLoading(false);
   }, []);
 
-  // Mock login function
-  const login = async (email, password, role) => {
+  // ✅ NEW: OTP-based login function
+  const login = async (userData, accessToken) => {
     try {
       setLoading(true);
       setError(null);
       
-      const response = await mockLogin(email, role);
+      // Store in localStorage
+      localStorage.setItem('token', accessToken);
+      localStorage.setItem('user', JSON.stringify(userData));
       
-      setUser(response.user);
-      setToken(response.access_token);  // ✅ SET TOKEN
+      // Update state
+      setUser(userData);
+      setToken(accessToken);
       setIsAuthenticated(true);
       
-      return response;
+      return { user: userData, access_token: accessToken };
     } catch (err) {
       const errorMsg = err.message || 'Login failed';
       setError(errorMsg);
@@ -51,7 +54,7 @@ export const UserProvider = ({ children }) => {
     try {
       apiLogout();
       setUser(null);
-      setToken(null);  // ✅ CLEAR TOKEN
+      setToken(null);
       setIsAuthenticated(false);
       setError(null);
     } catch (err) {
@@ -65,10 +68,9 @@ export const UserProvider = ({ children }) => {
     return user.permissions?.includes(permission);
   };
 
-  // ✅ ADD TOKEN TO CONTEXT VALUE
   const value = {
     user,
-    token,  // ✅ IMPORTANT!
+    token,
     loading,
     error,
     isAuthenticated,
@@ -84,8 +86,7 @@ export const UserProvider = ({ children }) => {
   );
 };
 
-// ============= CUSTOM HOOK =============
-
+// Custom Hook
 export const useUser = () => {
   const context = useContext(UserContext);
   if (!context) {
