@@ -218,6 +218,8 @@ def get_month_timesheets(
 
 # ============= GET TIMESHEET STATS =============
 
+# ============= GET TIMESHEET STATS =============
+
 @router.get("/stats/{year}/{month}")
 def get_timesheet_stats(
     year: int,
@@ -234,8 +236,6 @@ def get_timesheet_stats(
         end_date = date(year, month + 1, 1) - timedelta(days=1)
     
     today = date.today()
-    
-    # ✅ CALCULATE YESTERDAY (1 day prior)
     yesterday = today - timedelta(days=1)
     
     entries = db.query(TimesheetEntry).filter(
@@ -264,11 +264,12 @@ def get_timesheet_stats(
         if e.is_absent:
             absent += 1
         elif e.is_locked:
+            # ✅ COUNT ACTUAL DB LOCKED
             locked += 1
         elif e.status == "filled" or e.hours_logged:
             filled += 1
         else:
-            # ✅ AUTO-LOCK LOGIC: Entries older than 1 day (yesterday and before)
+            # ✅ AUTO-LOCK LOGIC: Entries older than yesterday with no data
             if e.date < yesterday and not e.hours_logged:
                 locked += 1
             else:
@@ -286,7 +287,7 @@ def get_timesheet_stats(
         "total_hours": round(total_hours_formatted, 2)
     }
     
-
+ 
 # ============= GET EMPLOYEE TIMESHEETS (Manager/HR) =============
 
 @router.get("/employee/{employee_id}/month/{year}/{month}")
@@ -315,32 +316,44 @@ def get_employee_month_timesheets(
     else:
         end_date = date(year, month + 1, 1) - timedelta(days=1)
     
-    today = date.today()
-    
     entries = db.query(TimesheetEntry).filter(
         TimesheetEntry.user_id == employee_id,
         TimesheetEntry.date >= start_date,
         TimesheetEntry.date <= end_date
     ).order_by(TimesheetEntry.date).all()
     
-    # ✅ AUTO-LOCK OLD ENTRIES
-    entries = auto_lock_old_entries(entries, today)
+    # ❌ REMOVED AUTO-LOCK - Just return DB values
     
     result = []
     for entry in entries:
+        activities_list = []
+        if entry.activities:
+            for activity in entry.activities:
+                activities_list.append({
+                    "id": activity.id,
+                    "slot": activity.slot,
+                    "description": activity.description,
+                    "output": activity.output,
+                    "start_time": activity.start_time,
+                    "end_time": activity.end_time
+                })
+        
         result.append({
             "id": entry.id,
             "employee_name": employee.name,
             "date": str(entry.date),
             "start_time": entry.start_time,
             "end_time": entry.end_time,
-            "hours_logged": minutes_to_hours(entry.hours_logged) if entry.hours_logged else 0,
+            "hours_logged": entry.hours_logged,
             "description": entry.description,
             "status": entry.status,
-            "is_locked": entry.is_locked
+            "is_locked": entry.is_locked,  # ✅ RETURNS ACTUAL DB VALUE
+            "activities": activities_list
         })
     
     return result
+
+
 
 # ============= UNLOCK REQUEST =============
 
@@ -493,12 +506,14 @@ def approve_unlock_request(
 
 # ============= HR TIMESHEET DASHBOARD =============
 
+# ============= HR TIMESHEET DASHBOARD =============
+
 @router.get("/hr/dashboard")
 def get_hr_timesheet_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("manage_hr"))
 ):
-    """Get HR timesheet dashboard (HR only)"""
+    """Get HR timesheet dashboard (HR only) - STRICT DB LOCK COUNT"""
     
     today = date.today()
     month_start = date(today.year, today.month, 1)
@@ -533,21 +548,37 @@ def get_hr_timesheet_dashboard(
             TimesheetEntry.date <= today
         ).all()
         
-        # ✅ AUTO-LOCK OLD ENTRIES
-        month_entries = auto_lock_old_entries(month_entries, today)
+        # ✅ STRICT COUNT - ONLY DB LOCKED ENTRIES
+        filled = 0
+        pending = 0
+        locked = 0
         
-        filled = len([e for e in month_entries if e.status == "filled"])
-        pending = len([e for e in month_entries if e.status == "pending" and not e.is_locked])
-        locked = len([e for e in month_entries if e.is_locked])
+        for e in month_entries:
+            # Skip weekends
+            if e.date.weekday() == 6:
+                continue
+            
+            # Skip future dates
+            if e.date > today:
+                continue
+            
+            # ✅ ONLY COUNT ACTUAL DB LOCKED (NO AUTO-LOCK LOGIC)
+            if e.is_locked:
+                locked += 1
+            elif e.status == "filled" or e.hours_logged:
+                filled += 1
+            else:
+                pending += 1
         
         stats["month_summary"][user.name] = {
             "filled": filled,
             "pending": pending,
-            "locked": locked,
+            "locked": locked,  # ✅ NOW ONLY COUNTS DB LOCKED
             "total_hours": round(minutes_to_hours(sum(e.hours_logged or 0 for e in month_entries)), 2)
         }
     
     return stats
+
 
 @router.post("/activities", status_code=status.HTTP_201_CREATED)
 def create_standalone_activity(
@@ -795,6 +826,11 @@ def get_today_status_all_employees(
     Returns which employees have filled today's timesheet
     """
     today = date.today()
+    yesterday = today - timedelta(days=1)
+    
+    # ✅ SKIP IF YESTERDAY WAS SUNDAY (weekend)
+    if yesterday.weekday() == 6:  # Sunday
+        yesterday = yesterday - timedelta(days=1)  # Go to Saturday
     
     # Get all employees
     all_employees = db.query(User).filter(User.role.in_(['Employee', 'Manager', 'Team Lead'])).all()
@@ -809,7 +845,6 @@ def get_today_status_all_employees(
         ).first()
         
         # Check yesterday
-        yesterday = today - timedelta(days=1)
         yesterday_entry = db.query(TimesheetEntry).filter(
             TimesheetEntry.user_id == employee.id,
             TimesheetEntry.date == yesterday
@@ -822,6 +857,7 @@ def get_today_status_all_employees(
             "designation": employee.designation,
             "today_status": today_entry.status if today_entry else 'pending',
             "yesterday_status": yesterday_entry.status if yesterday_entry else 'pending',
+            "yesterday_date": str(yesterday),  # ✅ ADD THIS
             "today_hours": minutes_to_hours(today_entry.hours_logged) if today_entry and today_entry.hours_logged else 0,
             "is_locked_today": today_entry.is_locked if today_entry else False,
         })

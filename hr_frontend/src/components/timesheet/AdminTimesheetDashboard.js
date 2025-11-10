@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useUser } from '../../context/UserContext';
 import timesheetService from '../../services/timesheetService';
 import PayrollExport from './PayrollExport';
-
+import LockedEntriesModal from './LockedEntriesModal';
+import EmployeeTimesheetModal from './EmployeeTimesheetModal';
 
 function AdminTimesheetDashboard({ onBack }) {
   const { user, token } = useUser();
@@ -12,7 +13,9 @@ function AdminTimesheetDashboard({ onBack }) {
   const [unlockRequests, setUnlockRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [showLockedModal, setShowLockedModal] = useState(false);
+  const [showTimesheetModal, setShowTimesheetModal] = useState(false);
 
   // ✅ FETCH DATA FROM API ON MOUNT
   useEffect(() => {
@@ -21,101 +24,80 @@ function AdminTimesheetDashboard({ onBack }) {
     }
   }, [user, token]);
 
-
   // ✅ FETCH HR DASHBOARD DATA
-  // ✅ FETCH HR DASHBOARD DATA
-const fetchHRDashboardData = async () => {
-  setLoading(true);
-  setError('');
-  
-  try {
-    // ✅ Get today's status for all employees
-    const todayStatus = await timesheetService.getTodayStatusAllEmployees(token);
+  const fetchHRDashboardData = async () => {
+    setLoading(true);
+    setError('');
     
-    // ✅ Get HR Dashboard for monthly stats
-    const hrDashboard = await timesheetService.getHRDashboard(token);
-    
-    // ✅ Get pending unlock requests
-    const unlocks = await timesheetService.getPendingUnlockRequests(token);
-
-    // Format employee data
-    const employees = formatEmployeeData(todayStatus, hrDashboard);
-    setAllEmployees(employees);
-    setUnlockRequests(unlocks || []);
-
-  } catch (err) {
-    console.error('Error fetching HR dashboard data:', err);
-    setError(err.detail || 'Failed to fetch dashboard data');
-  } finally {
-    setLoading(false);
-  }
-};
-
-// ✅ FORMAT HR DASHBOARD DATA FOR DISPLAY
-const formatEmployeeData = (todayStatus, hrDashboard) => {
-  const monthSummary = hrDashboard.month_summary || {};
-
-  return todayStatus.map((employee, index) => {
-    const monthData = monthSummary[employee.name] || { 
-      filled: 0, 
-      pending: 0, 
-      locked: 0, 
-      total_hours: 0 
-    };
-    
-    return {
-      id: employee.user_id,
-      name: employee.name,
-      email: employee.email,
-      designation: employee.designation,
-      // ✅ NOW CORRECTLY SHOWS TODAY'S STATUS
-      todayStatus: employee.today_status,
-      yesterdayStatus: employee.yesterday_status,
-      todayHours: employee.today_hours || 0,
-      totalHours: monthData.total_hours || 0,
-      filledDays: monthData.filled || 0,
-      pendingDays: monthData.pending || 0,
-      lockedDays: monthData.locked || 0,
-      isLockedToday: employee.is_locked_today,
-    };
-  });
-};
-
-
-
-  // ✅ APPROVE UNLOCK REQUEST
-  const handleApproveUnlock = async (requestId) => {
     try {
-      await timesheetService.approveUnlockRequest(token, requestId, {
-        status: 'approved',
-        remarks: 'Approved by HR'
-      });
+      // ✅ Get today's status for all employees
+      const todayStatus = await timesheetService.getTodayStatusAllEmployees(token);
+      
+      // ✅ Get HR Dashboard for monthly stats
+      const hrDashboard = await timesheetService.getHRDashboard(token);
+      
+      // ✅ Get ALL unlock requests (view only)
+      try {
+        const unlocks = await timesheetService.getAllUnlockRequests(token);
+        setUnlockRequests(unlocks || []);
+      } catch (err) {
+        console.log('Failed to fetch unlock requests:', err);
+        setUnlockRequests([]);
+      }
 
-      // Remove from list
-      setUnlockRequests(prev => prev.filter(r => r.id !== requestId));
-      alert('Unlock approved successfully!');
+      // Format employee data
+      const employees = formatEmployeeData(todayStatus, hrDashboard);
+      setAllEmployees(employees);
+
     } catch (err) {
-      setError(err.detail || 'Failed to approve unlock');
+      console.error('Error fetching HR dashboard data:', err);
+      setError(err.detail || 'Failed to fetch dashboard data');
+    } finally {
+      setLoading(false);
     }
   };
 
+  // ✅ FORMAT HR DASHBOARD DATA FOR DISPLAY
+  const formatEmployeeData = (todayStatus, hrDashboard) => {
+    const monthSummary = hrDashboard.month_summary || {};
 
-  // ✅ REJECT UNLOCK REQUEST
-  const handleRejectUnlock = async (requestId) => {
-    try {
-      await timesheetService.approveUnlockRequest(token, requestId, {
-        status: 'rejected',
-        remarks: 'Rejected by HR'
-      });
-
-      // Remove from list
-      setUnlockRequests(prev => prev.filter(r => r.id !== requestId));
-      alert('Unlock rejected successfully!');
-    } catch (err) {
-      setError(err.detail || 'Failed to reject unlock');
-    }
+    return todayStatus.map((employee) => {
+      const monthData = monthSummary[employee.name] || { 
+        filled: 0, 
+        pending: 0, 
+        locked: 0, 
+        total_hours: 0 
+      };
+      
+      return {
+        id: employee.user_id,
+        name: employee.name,
+        email: employee.email,
+        designation: employee.designation,
+        todayStatus: employee.today_status,
+        yesterdayStatus: employee.yesterday_status,
+        yesterdayDate: employee.yesterday_date,  // ✅ ADD THIS
+        todayHours: employee.today_hours || 0,
+        totalHours: monthData.total_hours || 0,
+        filledDays: monthData.filled || 0,
+        pendingDays: monthData.pending || 0,
+        lockedDays: monthData.locked || 0,
+        isLockedToday: employee.is_locked_today,
+      };
+    });
   };
 
+  // ✅ HANDLE VIEW LOCKED ENTRIES
+  const handleViewLockedEntries = (employee) => {
+    setSelectedEmployee(employee);
+    setShowLockedModal(true);
+  };
+
+  // ✅ HANDLE VIEW TIMESHEETS
+  const handleViewTimesheets = (employee) => {
+    setSelectedEmployee(employee);
+    setShowTimesheetModal(true);
+  };
 
   // Get filtered employees based on active tab
   const getFilteredEmployees = () => {
@@ -124,7 +106,8 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
     // Apply search
     if (searchEmployee.trim()) {
       filtered = filtered.filter(emp =>
-        emp.name.toLowerCase().includes(searchEmployee.toLowerCase())
+        emp.name.toLowerCase().includes(searchEmployee.toLowerCase()) ||
+        emp.email.toLowerCase().includes(searchEmployee.toLowerCase())
       );
     }
 
@@ -143,7 +126,6 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
     }
   };
 
-
   const filteredEmployees = getFilteredEmployees();
 
   // Stats
@@ -158,6 +140,13 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
     pending: allEmployees.filter(e => e.yesterdayStatus === 'pending').length,
   };
 
+  // Unlock request stats
+  const unlockStats = {
+    pending: unlockRequests.filter(r => r.status === 'pending').length,
+    approved: unlockRequests.filter(r => r.status === 'approved').length,
+    rejected: unlockRequests.filter(r => r.status === 'rejected').length,
+    total: unlockRequests.length,
+  };
 
   // Styles
   const containerStyle = {
@@ -294,13 +283,13 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
 
   const statusBadgeStyle = (status) => {
     let bgColor, textColor;
-    if (status === 'filled') {
+    if (status === 'filled' || status === 'approved') {
       bgColor = '#D1FAE5';
       textColor = '#065F46';
     } else if (status === 'pending') {
       bgColor = '#FEF3C7';
       textColor = '#92400E';
-    } else if (status === 'locked') {
+    } else if (status === 'locked' || status === 'rejected') {
       bgColor = '#FEE2E2';
       textColor = '#991B1B';
     }
@@ -334,31 +323,6 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
     color: '#9CA3AF',
   };
 
-  const actionButtonStyle = {
-    padding: '8px 16px',
-    backgroundColor: '#10B981',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    marginRight: '8px',
-    transition: 'all 0.3s ease',
-  };
-
-  const rejectButtonStyle = {
-    padding: '8px 16px',
-    backgroundColor: '#EF4444',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-  };
-
   const loadingStyle = {
     textAlign: 'center',
     padding: '40px',
@@ -373,8 +337,30 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
     padding: '12px',
     borderRadius: '6px',
     marginBottom: '20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   };
 
+  const infoBoxStyle = {
+    backgroundColor: '#EFF6FF',
+    border: '1px solid #BFDBFE',
+    borderRadius: '8px',
+    padding: '12px 16px',
+    marginBottom: '20px',
+    fontSize: '14px',
+    color: '#1E40AF',
+  };
+
+  const clickHintStyle = {
+    marginTop: '12px',
+    padding: '8px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '6px',
+    fontSize: '13px',
+    color: '#64748b',
+    textAlign: 'center',
+  };
 
   // ✅ AUTHORIZATION CHECK
   if (!user || (user.role !== 'HR' && user.role !== 'CEO')) {
@@ -389,16 +375,32 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
     return <div style={loadingStyle}>Loading dashboard data...</div>;
   }
 
-
   return (
     <div style={containerStyle}>
       {/* Error Message */}
-      {error && <div style={errorStyle}>⚠️ {error}</div>}
+      {error && (
+        <div style={errorStyle}>
+          <span>⚠️ {error}</span>
+          <button 
+            onClick={() => setError('')}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: '#991B1B', 
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}
+          >
+            ✖
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div style={headerStyle}>
         <h2 style={titleStyle}>
-          👔 Admin Dashboard
+          👔 HR Timesheet Dashboard
           <span style={roleStyleStyle}>
             {user.role === 'HR' ? '👩‍💼 HR' : '👑 CEO'}
           </span>
@@ -425,16 +427,16 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
         </div>
         <div style={statCardStyle('#FEE2E2')}>
           <div style={statValueStyle}>{stats.locked}</div>
-          <div style={statLabelStyle}>Locked</div>
+          <div style={statLabelStyle}>Locked Days</div>
         </div>
         <div style={statCardStyle('#EFF6FF')}>
           <div style={statValueStyle}>{stats.total}</div>
           <div style={statLabelStyle}>Total Employees</div>
         </div>
-        {yesterdayStats.pending > 0 && (
-          <div style={statCardStyle('#FEF3C7')}>
-            <div style={statValueStyle}>{yesterdayStats.pending}</div>
-            <div style={statLabelStyle}>Yesterday Pending</div>
+        {unlockStats.total > 0 && (
+          <div style={statCardStyle('#DBEAFE')}>
+            <div style={statValueStyle}>{unlockStats.total}</div>
+            <div style={statLabelStyle}>Unlock Requests</div>
           </div>
         )}
       </div>
@@ -469,7 +471,7 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
           style={tabButtonStyle(activeAdminTab === 'unlock-requests')}
           onClick={() => setActiveAdminTab('unlock-requests')}
         >
-          🔓 Unlock Requests ({unlockRequests.length})
+          🔓 Unlock Requests ({unlockStats.total})
         </button>
         <button
           style={tabButtonStyle(activeAdminTab === 'payroll-export')}
@@ -484,7 +486,7 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
         <div style={searchContainerStyle}>
           <input
             type="text"
-            placeholder="🔍 Search employee name..."
+            placeholder="🔍 Search employee name or email..."
             value={searchEmployee}
             onChange={(e) => setSearchEmployee(e.target.value)}
             style={searchInputStyle}
@@ -494,7 +496,7 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
 
       {/* ========== CONTENT TABS ========== */}
 
-      {/* Today Updated Tab */}
+      {/* Today Updated Tab - CLICKABLE */}
       {activeAdminTab === 'today-updated' && (
         <div>
           {filteredEmployees.length === 0 ? (
@@ -504,14 +506,46 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewTimesheets(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
-                  <div style={employeeNameStyle}>{emp.name}</div>
+                  <div>
+                    <div style={employeeNameStyle}>{emp.name}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email}
+                    </div>
+                  </div>
                   <span style={statusBadgeStyle('filled')}>✅ Updated</span>
                 </div>
-                <div style={hoursStyle}>⏰ {emp.todayHours.toFixed(1)}h</div>
-                <div style={detailStyle}>
-                  <strong>Filled Days:</strong> {emp.filledDays}
+                <div style={hoursStyle}>⏰ {emp.todayHours.toFixed(1)}h today</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <div style={detailStyle}>
+                    <strong>Total Hours:</strong> {emp.totalHours.toFixed(1)}h
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Filled Days:</strong> {emp.filledDays}
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Pending:</strong> {emp.pendingDays}
+                  </div>
+                </div>
+                <div style={clickHintStyle}>
+                  👆 Click to view all filled timesheets
                 </div>
               </div>
             ))
@@ -519,7 +553,7 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
         </div>
       )}
 
-      {/* Yesterday Pending Tab */}
+      {/* Yesterday Pending Tab - CLICKABLE */}
       {activeAdminTab === 'yesterday-pending' && (
         <div>
           {filteredEmployees.length === 0 ? (
@@ -529,13 +563,47 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewTimesheets(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
-                  <div style={employeeNameStyle}>{emp.name}</div>
+                  <div>
+                    <div style={employeeNameStyle}>{emp.name}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email}
+                    </div>
+                  </div>
                   <span style={statusBadgeStyle('pending')}>⏳ Pending</span>
                 </div>
+                {emp.yesterdayDate && (
+                  <div style={detailStyle}>
+                    <strong>📅 Pending Date:</strong> {new Date(emp.yesterdayDate).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </div>
+                )}
                 <div style={detailStyle}>
-                  <strong>Status:</strong> Timesheet for yesterday not filled yet
+                  <strong>Status:</strong> Timesheet not filled yet
+                </div>
+                <div style={clickHintStyle}>
+                  👆 Click to view all filled timesheets
                 </div>
               </div>
             ))
@@ -543,23 +611,58 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
         </div>
       )}
 
-      {/* Locked Tab */}
+      {/* Locked Tab - WITH MODAL */}
       {activeAdminTab === 'locked' && (
         <div>
           {filteredEmployees.length === 0 ? (
             <div style={emptyStateStyle}>
               <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
-              <p style={{ fontSize: '18px', fontWeight: '500' }}>No locked timesheets</p>
+              <p style={{ fontSize: '18px', fontWeight: '500' }}>No employees with locked timesheets</p>
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewLockedEntries(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
-                  <div style={employeeNameStyle}>{emp.name}</div>
-                  <span style={statusBadgeStyle('locked')}>🔒 Locked</span>
+                  <div>
+                    <div style={employeeNameStyle}>{emp.name}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email}
+                    </div>
+                  </div>
+                  <span style={statusBadgeStyle('locked')}>🔒 Has Locked Days</span>
                 </div>
-                <div style={detailStyle}>
-                  <strong>Locked Days:</strong> {emp.lockedDays}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                  <div style={detailStyle}>
+                    <strong>Locked Days:</strong> {emp.lockedDays}
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Filled:</strong> {emp.filledDays}
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Pending:</strong> {emp.pendingDays}
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Total Hours:</strong> {emp.totalHours.toFixed(1)}h
+                  </div>
+                </div>
+                <div style={clickHintStyle}>
+                  👆 Click to see which specific dates are locked
                 </div>
               </div>
             ))
@@ -567,7 +670,7 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
         </div>
       )}
 
-      {/* All Tab */}
+      {/* All Tab - CLICKABLE */}
       {activeAdminTab === 'all' && (
         <div>
           {filteredEmployees.length === 0 ? (
@@ -577,16 +680,35 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewTimesheets(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
-                  <div style={employeeNameStyle}>{emp.name}</div>
+                  <div>
+                    <div style={employeeNameStyle}>{emp.name}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email} • {emp.designation}
+                    </div>
+                  </div>
                   <span style={statusBadgeStyle(emp.todayStatus)}>
-                    {emp.todayStatus === 'filled' && '✅ Updated'}
-                    {emp.todayStatus === 'pending' && '⏳ Pending'}
-                    {emp.lockedDays > 0 && '🔒 Locked'}
+                    {emp.todayStatus === 'filled' ? '✅ Updated Today' : '⏳ Pending Today'}
                   </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                   <div style={detailStyle}>
                     <strong>Total Hours:</strong> {emp.totalHours.toFixed(1)}h
                   </div>
@@ -600,54 +722,64 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
                     <strong>Locked:</strong> {emp.lockedDays} days
                   </div>
                 </div>
+                <div style={clickHintStyle}>
+                  👆 Click to view detailed timesheets
+                </div>
               </div>
             ))
           )}
         </div>
       )}
 
-      {/* Unlock Requests Tab */}
+      {/* Unlock Requests Tab - VIEW ONLY */}
       {activeAdminTab === 'unlock-requests' && (
         <div>
+          <div style={infoBoxStyle}>
+            ℹ️ <strong>View Only:</strong> To approve or reject unlock requests, please go to the Admin Panel.
+          </div>
+
           {unlockRequests.length === 0 ? (
             <div style={emptyStateStyle}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
-              <p style={{ fontSize: '18px', fontWeight: '500' }}>No pending unlock requests</p>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📋</div>
+              <p style={{ fontSize: '18px', fontWeight: '500' }}>No unlock requests</p>
             </div>
           ) : (
             unlockRequests.map((request) => (
               <div key={request.id} style={cardStyle}>
                 <div style={employeeHeaderStyle}>
-                  <div style={employeeNameStyle}>{request.employee_name}</div>
-                  <span style={statusBadgeStyle('pending')}>Pending</span>
+                  <div>
+                    <div style={employeeNameStyle}>{request.employee_name}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {request.employee_email}
+                    </div>
+                  </div>
+                  <span style={statusBadgeStyle(request.status)}>
+                    {request.status === 'pending' && '⏳ Pending'}
+                    {request.status === 'approved' && '✅ Approved'}
+                    {request.status === 'rejected' && '❌ Rejected'}
+                  </span>
                 </div>
                 <div style={detailStyle}>
-                  <strong>📅 Date to unlock:</strong> {request.date}
+                  <strong>📅 Date:</strong> {new Date(request.date).toLocaleDateString('en-US', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                  })}
                 </div>
                 <div style={detailStyle}>
                   <strong>📝 Reason:</strong> {request.reason}
                 </div>
                 <div style={detailStyle}>
-                  <strong>⏰ Requested on:</strong> {request.requested_on}
+                  <strong>⏰ Requested:</strong> {new Date(request.requested_on).toLocaleString()}
                 </div>
-                <div style={{ marginTop: '16px' }}>
-                  <button
-                    style={actionButtonStyle}
-                    onClick={() => handleApproveUnlock(request.id)}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = '#059669'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = '#10B981'}
-                  >
-                    ✓ Approve
-                  </button>
-                  <button
-                    style={rejectButtonStyle}
-                    onClick={() => handleRejectUnlock(request.id)}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = '#DC2626'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = '#EF4444'}
-                  >
-                    ✕ Reject
-                  </button>
-                </div>
+                {request.remarks && (
+                  <div style={detailStyle}>
+                    <strong>💬 Admin Remarks:</strong> {request.remarks}
+                  </div>
+                )}
+                {request.approved_on && (
+                  <div style={detailStyle}>
+                    <strong>✓ Processed:</strong> {new Date(request.approved_on).toLocaleString()}
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -658,9 +790,32 @@ const formatEmployeeData = (todayStatus, hrDashboard) => {
       {activeAdminTab === 'payroll-export' && (
         <PayrollExport />
       )}
+
+      {/* Locked Entries Modal */}
+      {showLockedModal && selectedEmployee && (
+        <LockedEntriesModal
+          employee={selectedEmployee}
+          token={token}
+          onClose={() => {
+            setShowLockedModal(false);
+            setSelectedEmployee(null);
+          }}
+        />
+      )}
+
+      {/* Employee Timesheet Modal */}
+      {showTimesheetModal && selectedEmployee && (
+        <EmployeeTimesheetModal
+          employee={selectedEmployee}
+          token={token}
+          onClose={() => {
+            setShowTimesheetModal(false);
+            setSelectedEmployee(null);
+          }}
+        />
+      )}
     </div>
   );
 }
-
 
 export default AdminTimesheetDashboard;

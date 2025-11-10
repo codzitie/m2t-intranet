@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../../context/UserContext';
 import timesheetService from '../../services/timesheetService';
-
+import axios from 'axios';
 
 function PayrollExport() {
   const { token, user } = useUser();
@@ -10,50 +10,61 @@ function PayrollExport() {
   const [payrollData, setPayrollData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [employees, setEmployees] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
 
-
-  // ✅ FETCH EMPLOYEES (HR ONLY)
+  // ✅ FETCH ALL USERS FIRST (to get user IDs)
   useEffect(() => {
     if (user && user.role === 'HR' && token) {
-      fetchEmployeeTimesheets();
+      fetchAllUsers();
     }
   }, [token, user]);
 
+  // ✅ FETCH ALL USERS TO GET USER IDs
+  const fetchAllUsers = async () => {
+    try {
+      const response = await axios.get('http://localhost:8000/api/admin/users', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAllUsers(response.data);
+      fetchEmployeeTimesheets(response.data);
+    } catch (err) {
+      console.error('Error fetching users:', err);
+      setError('Failed to fetch user list');
+    }
+  };
 
   // ✅ FETCH ALL EMPLOYEE TIMESHEETS
-  const fetchEmployeeTimesheets = async () => {
+  const fetchEmployeeTimesheets = async (usersList) => {
     setLoading(true);
     setError('');
     
     try {
-      // Get current month data
       const year = new Date().getFullYear();
       const month = new Date().getMonth() + 1;
 
-      // ✅ CALL API TO GET HR DASHBOARD (all employees)
       const hrDashboard = await timesheetService.getHRDashboard(token);
-      
-      // Extract employee data from dashboard
       const monthSummary = hrDashboard.month_summary || {};
       
-      // Get detailed timesheet data for each employee
       const employeeList = [];
       
       for (const employeeName in monthSummary) {
         const empData = monthSummary[employeeName];
-        employeeList.push({
-          name: employeeName,
-          totalHours: empData.total_hours,
-          filledDays: empData.filled,
-          pendingDays: empData.pending || 0,
-          lockedDays: empData.locked || 0,
-          workingDays: empData.filled + (empData.pending || 0) + (empData.locked || 0),
-          timesheetsInRange: []
-        });
+        const userRecord = usersList.find(u => u.name === employeeName);
+        
+        if (userRecord) {
+          employeeList.push({
+            id: userRecord.id,
+            name: employeeName,
+            email: userRecord.email,
+            totalHours: empData.total_hours,
+            filledDays: empData.filled,
+            pendingDays: empData.pending || 0,
+            lockedDays: empData.locked || 0,
+            workingDays: empData.filled + (empData.pending || 0) + (empData.locked || 0)
+          });
+        }
       }
 
-      setEmployees(employeeList);
       setPayrollData(employeeList);
 
     } catch (err) {
@@ -64,11 +75,12 @@ function PayrollExport() {
     }
   };
 
-
-  // ✅ FETCH SPECIFIC EMPLOYEE TIMESHEETS (for detailed export)
+  // ✅ FETCH SPECIFIC EMPLOYEE TIMESHEETS
   const fetchEmployeeDetailedTimesheets = async (employeeId, year, month) => {
     try {
+      console.log(`Fetching timesheets for employee ${employeeId}, ${year}-${month}`);
       const entries = await timesheetService.getEmployeeTimesheets(token, employeeId, year, month);
+      console.log(`Fetched ${entries.length} entries`, entries);
       return entries;
     } catch (err) {
       console.error('Error fetching employee detailed timesheets:', err);
@@ -76,47 +88,66 @@ function PayrollExport() {
     }
   };
 
+  // ✅ EXPORT ALL EMPLOYEES AS CSV (WITH LOCKED STATUS)
+  // ✅ EXPORT ALL EMPLOYEES AS CSV (FIXED)
+const exportAllCSV = async () => {
+  setLoading(true);
+  
+  try {
+    const headers = [
+      'Employee Name',
+      'Email',
+      'Date',
+      'Start Time',
+      'End Time',
+      'Hours Logged',
+      'Status',
+      'Is Locked',
+      'Daily Description',
+      'Morning Activities',
+      'Morning Output',
+      'Afternoon Activities',
+      'Afternoon Output'
+    ];
 
-  // ✅ EXPORT ALL EMPLOYEES AS CSV
-  const exportAllCSV = async () => {
-    setLoading(true);
-    
-    try {
-      const headers = [
-        'Employee Name',
-        'Date',
-        'Start Time',
-        'End Time',
-        'Hours Logged',
-        'Status',
-        'Daily Description',
-        'Morning Activities',
-        'Morning Output',
-        'Afternoon Activities',
-        'Afternoon Output'
-      ];
+    const rows = [];
+    const year = parseInt(startDate.split('-')[0]);
+    const month = parseInt(startDate.split('-')[1]);
 
-      const rows = [];
+    for (const emp of payrollData) {
+      try {
+        const timesheets = await fetchEmployeeDetailedTimesheets(emp.id, year, month);
 
-      // Fetch detailed data for each employee
-      for (const emp of payrollData) {
-        try {
-          const year = parseInt(startDate.split('-')[0]);
-          const month = parseInt(startDate.split('-')[1]);
-          
-          const timesheets = await fetchEmployeeDetailedTimesheets(emp.id, year, month);
-
+        if (timesheets.length === 0) {
+          rows.push([
+            emp.name,
+            emp.email,
+            '-',
+            '-',
+            '-',
+            0,
+            'No Data',
+            'No',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-'
+          ]);
+        } else {
           timesheets.forEach(ts => {
             const morningActivity = ts.activities?.find(a => a.slot === 'morning');
             const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
 
             rows.push([
               emp.name,
+              emp.email,
               ts.date,
               ts.start_time || '-',
               ts.end_time || '-',
-              ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,
+              ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,  // ✅ FIXED: Divide by 60
               ts.status,
+              ts.is_locked ? 'Yes' : 'No',  // ✅ REMOVED EMOJI
               ts.description || '-',
               morningActivity?.description || '-',
               morningActivity?.output || '-',
@@ -124,92 +155,106 @@ function PayrollExport() {
               afternoonActivity?.output || '-'
             ]);
           });
-        } catch (err) {
-          console.error(`Error fetching details for ${emp.name}:`, err);
         }
+      } catch (err) {
+        console.error(`Error fetching details for ${emp.name}:`, err);
       }
-
-      const csvContent = [
-        headers.join(','),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
-
-      downloadCSV(csvContent, `payroll_detailed_${startDate}_to_${endDate}.csv`);
-
-    } catch (err) {
-      setError('Failed to export CSV');
-      console.error(err);
-    } finally {
-      setLoading(false);
     }
-  };
 
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
 
-  // ✅ EXPORT INDIVIDUAL EMPLOYEE AS CSV
-  const exportIndividualCSV = async (employee) => {
-    setLoading(true);
+    downloadCSV(csvContent, `payroll_detailed_${startDate}_to_${endDate}.csv`);
+
+  } catch (err) {
+    setError('Failed to export CSV');
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// ✅ EXPORT INDIVIDUAL EMPLOYEE AS CSV (FIXED)
+const exportIndividualCSV = async (employee) => {
+  setLoading(true);
+  
+  try {
+    const year = parseInt(startDate.split('-')[0]);
+    const month = parseInt(startDate.split('-')[1]);
     
-    try {
-      const year = parseInt(startDate.split('-')[0]);
-      const month = parseInt(startDate.split('-')[1]);
-      
-      const timesheets = await fetchEmployeeDetailedTimesheets(employee.id, year, month);
+    console.log(`Exporting for employee:`, employee);
+    
+    const timesheets = await fetchEmployeeDetailedTimesheets(employee.id, year, month);
 
-      const headers = [
-        'Date',
-        'Start Time',
-        'End Time',
-        'Hours Logged',
-        'Status',
-        'Daily Description',
-        'Morning Activities',
-        'Morning Output',
-        'Afternoon Activities',
-        'Afternoon Output'
-      ];
+    console.log(`Fetched ${timesheets.length} timesheets for ${employee.name}`);
 
-      const rows = timesheets.map(ts => {
-        const morningActivity = ts.activities?.find(a => a.slot === 'morning');
-        const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
-
-        return [
-          ts.date,
-          ts.start_time || '-',
-          ts.end_time || '-',
-          ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,
-          ts.status,
-          ts.description || '-',
-          morningActivity?.description || '-',
-          morningActivity?.output || '-',
-          afternoonActivity?.description || '-',
-          afternoonActivity?.output || '-'
-        ];
-      });
-
-      const totalHours = timesheets.reduce((sum, ts) => sum + (ts.hours_logged || 0), 0) / 60;
-      const filledDays = timesheets.filter(ts => ts.status === 'filled').length;
-      const workingDays = timesheets.filter(ts => ts.status !== 'weekend').length;
-
-      const csvContent = [
-        `Employee: ${employee.name}`,
-        `Period: ${startDate} to ${endDate}`,
-        `Total Hours: ${totalHours.toFixed(1)}`,
-        `Filled Days: ${filledDays}/${workingDays}`,
-        '',
-        headers.join(','),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
-
-      downloadCSV(csvContent, `${employee.name}_detailed_${startDate}_to_${endDate}.csv`);
-
-    } catch (err) {
-      setError('Failed to export employee CSV');
-      console.error(err);
-    } finally {
+    if (timesheets.length === 0) {
+      setError(`No timesheet data found for ${employee.name} in ${year}-${month}`);
       setLoading(false);
+      return;
     }
-  };
 
+    const headers = [
+      'Date',
+      'Start Time',
+      'End Time',
+      'Hours Logged',
+      'Status',
+      'Is Locked',
+      'Daily Description',
+      'Morning Activities',
+      'Morning Output',
+      'Afternoon Activities',
+      'Afternoon Output'
+    ];
+
+    const rows = timesheets.map(ts => {
+      const morningActivity = ts.activities?.find(a => a.slot === 'morning');
+      const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
+
+      return [
+        ts.date,
+        ts.start_time || '-',
+        ts.end_time || '-',
+        ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,  // ✅ FIXED: Divide by 60
+        ts.status,
+        ts.is_locked ? 'Yes' : 'No',  // ✅ REMOVED EMOJI
+        ts.description || '-',
+        morningActivity?.description || '-',
+        morningActivity?.output || '-',
+        afternoonActivity?.description || '-',
+        afternoonActivity?.output || '-'
+      ];
+    });
+
+    const totalHours = timesheets.reduce((sum, ts) => sum + (ts.hours_logged || 0), 0) / 60;
+    const filledDays = timesheets.filter(ts => ts.status === 'filled').length;
+    const workingDays = timesheets.filter(ts => ts.status !== 'weekend').length;
+    const lockedDays = timesheets.filter(ts => ts.is_locked).length;
+
+    const csvContent = [
+      `Employee: ${employee.name}`,
+      `Email: ${employee.email}`,
+      `Period: ${startDate} to ${endDate}`,
+      `Total Hours: ${totalHours.toFixed(1)}`,
+      `Filled Days: ${filledDays}/${workingDays}`,
+      `Locked Days: ${lockedDays}`,
+      '',
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    downloadCSV(csvContent, `${employee.name}_detailed_${year}_${month}.csv`);
+
+  } catch (err) {
+    setError(`Failed to export ${employee.name}'s CSV: ${err.message}`);
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Helper function to download CSV
   const downloadCSV = (content, filename) => {
@@ -221,7 +266,6 @@ function PayrollExport() {
     a.click();
     window.URL.revokeObjectURL(url);
   };
-
 
   // Styles
   const containerStyle = {
@@ -326,6 +370,9 @@ function PayrollExport() {
     padding: '12px',
     borderRadius: '6px',
     marginBottom: '20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   };
 
   const loadingStyle = {
@@ -334,7 +381,6 @@ function PayrollExport() {
     color: '#666',
     fontSize: '16px',
   };
-
 
   // ✅ AUTHORIZATION CHECK
   if (!user || user.role !== 'HR') {
@@ -345,16 +391,31 @@ function PayrollExport() {
     );
   }
 
-
   if (loading) {
     return <div style={loadingStyle}>Loading payroll data...</div>;
   }
 
-
   return (
     <div style={containerStyle}>
       {/* Error Message */}
-      {error && <div style={errorStyle}>⚠️ {error}</div>}
+      {error && (
+        <div style={errorStyle}>
+          <span>⚠️ {error}</span>
+          <button 
+            onClick={() => setError('')}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: '#991B1B', 
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}
+          >
+            ✖
+          </button>
+        </div>
+      )}
 
       {/* Date Range Picker */}
       <div style={searchContainerStyle}>
@@ -436,7 +497,7 @@ function PayrollExport() {
               <div>
                 <div style={employeeNameStyle}>{emp.name}</div>
                 <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                  {emp.filledDays}/{emp.workingDays} days filled • {emp.totalHours.toFixed(1)}h total
+                  {emp.email} • {emp.filledDays}/{emp.workingDays} days filled • {emp.totalHours.toFixed(1)}h total
                 </div>
               </div>
               <button
@@ -479,6 +540,5 @@ function PayrollExport() {
     </div>
   );
 }
-
 
 export default PayrollExport;

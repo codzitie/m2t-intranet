@@ -1,10 +1,13 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { useUser } from "../context/UserContext"; // Import useUser hook
+import { useUser } from "../context/UserContext";
 import Notifications from './Notifications';
 
 function Header() {
-  const { user, isAuthenticated, logout } = useUser(); // Get user info
+  const { user, isAuthenticated, logout } = useUser();
+  
+  // ✅ CHECK IF USER IS ADMIN
+  const isAdmin = user && ['Admin', 'HR', 'CEO'].includes(user.role);
 
   const headerStyle = {
     display: "flex",
@@ -31,6 +34,16 @@ function Header() {
     fontSize: "16px",
     fontWeight: "500",
     transition: "color 0.3s ease",
+  };
+
+  // ✅ ADD ADMIN LINK STYLE
+  const adminLinkStyle = {
+    ...linkStyle,
+    background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
+    padding: "8px 16px",
+    borderRadius: "6px",
+    fontWeight: "700",
+    boxShadow: "0 2px 8px rgba(251, 191, 36, 0.3)",
   };
 
   const userInfoStyle = {
@@ -65,6 +78,24 @@ function Header() {
         <Link to="/leave" style={linkStyle}>Leave Application & Approval</Link>
         <Link to="/policy" style={linkStyle}>HR Policy Repository</Link>
         <Link to="/security" style={linkStyle}>Security & Access</Link>
+        
+        {/* ✅ ADD ADMIN LINK - Only visible to Admin/HR/CEO */}
+        {isAdmin && (
+          <Link 
+            to="/admin" 
+            style={adminLinkStyle}
+            onMouseEnter={(e) => {
+              e.target.style.background = "linear-gradient(135deg, #f59e0b, #d97706)";
+              e.target.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = "linear-gradient(135deg, #fbbf24, #f59e0b)";
+              e.target.style.transform = "translateY(0)";
+            }}
+          >
+            ⚙️ Admin Panel
+          </Link>
+        )}
         
         {/* User Info Section */}
         {isAuthenticated && user && (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../../context/UserContext';
 import timesheetService from '../../services/timesheetService';
+import EmployeeTimesheetModal from './EmployeeTimesheetModal';
 
 function ManagerTimesheetDashboard() {
   const { user, token } = useUser();
@@ -9,6 +10,8 @@ function ManagerTimesheetDashboard() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [showTimesheetModal, setShowTimesheetModal] = useState(false);
 
   useEffect(() => {
     if (user && user.role && ['Manager', 'Team Lead', 'CEO', 'Founder', 'HR'].includes(user.role) && token) {
@@ -38,33 +41,60 @@ function ManagerTimesheetDashboard() {
   };
 
   const formatTeamData = (apiData) => {
-    const today = new Date();
-    const yesterday = new Date(today);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // ✅ SKIP SUNDAY - GO TO SATURDAY
+  if (yesterday.getDay() === 0) {
     yesterday.setDate(yesterday.getDate() - 1);
+  }
 
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
 
-    return apiData.map(member => {
-      const todayEntry = member.entries.find(e => e.date === todayStr);
-      const yesterdayEntry = member.entries.find(e => e.date === yesterdayStr);
+  return apiData.map(member => {
+    const todayEntry = member.entries.find(e => e.date === todayStr);
+    const yesterdayEntry = member.entries.find(e => e.date === yesterdayStr);
 
-      return {
-        id: member.user_id,
-        name: member.name,
-        email: member.email,
-        designation: member.designation,
-        todayStatus: todayEntry?.status || 'pending',
-        yesterdayStatus: yesterdayEntry?.status || 'pending',
-        todayTimesheet: todayEntry ? {
-          date: todayEntry.date,
-          startTime: todayEntry.start_time,
-          endTime: todayEntry.end_time,
-          hoursLogged: todayEntry.hours_logged ? (todayEntry.hours_logged).toFixed(1) : 0,
-          activities: todayEntry.activities || []
-        } : null,
-      };
-    });
+    const filledEntries = member.entries.filter(e => e.status === 'filled');
+    const lockedEntries = member.entries.filter(e => e.is_locked);
+    
+    // ✅ Backend already converts to hours - NO /60 NEEDED
+    const totalHours = filledEntries.reduce((sum, e) => {
+      return sum + (e.hours_logged || 0);
+    }, 0);
+
+    const todayHours = todayEntry?.hours_logged || 0;
+
+    return {
+      id: member.user_id,
+      name: member.name,
+      email: member.email,
+      designation: member.designation,
+      todayStatus: todayEntry?.status || 'pending',
+      yesterdayStatus: yesterdayEntry?.status || 'pending',
+      yesterdayDate: yesterdayStr,
+      filledDays: filledEntries.length,
+      lockedDays: lockedEntries.length,
+      totalHours: totalHours,
+      todayHours: todayHours,
+      todayTimesheet: todayEntry ? {
+        date: todayEntry.date,
+        startTime: todayEntry.start_time,
+        endTime: todayEntry.end_time,
+        hoursLogged: todayEntry.hours_logged.toFixed(1),
+        description: todayEntry.description,
+        activities: todayEntry.activities || []
+      } : null,
+    };
+  });
+};
+
+  // ✅ HANDLE VIEW TIMESHEETS
+  const handleViewTimesheets = (employee) => {
+    setSelectedEmployee(employee);
+    setShowTimesheetModal(true);
   };
 
   const getFilteredEmployees = () => {
@@ -72,7 +102,8 @@ function ManagerTimesheetDashboard() {
 
     if (searchEmployee.trim()) {
       filtered = filtered.filter(emp =>
-        emp.name.toLowerCase().includes(searchEmployee.toLowerCase())
+        emp.name.toLowerCase().includes(searchEmployee.toLowerCase()) ||
+        emp.email.toLowerCase().includes(searchEmployee.toLowerCase())
       );
     }
 
@@ -83,8 +114,6 @@ function ManagerTimesheetDashboard() {
         return filtered.filter(emp => emp.todayStatus === 'pending' && emp.todayStatus !== 'locked');
       case 'yesterday-pending':
         return filtered.filter(emp => emp.yesterdayStatus === 'pending');
-      case 'locked':
-        return filtered.filter(emp => emp.todayStatus === 'locked');
       case 'all':
         return filtered;
       default:
@@ -97,7 +126,6 @@ function ManagerTimesheetDashboard() {
   const stats = {
     updated: teamMembers.filter(e => e.todayStatus === 'filled').length,
     pending: teamMembers.filter(e => e.todayStatus === 'pending').length,
-    locked: teamMembers.filter(e => e.todayStatus === 'locked').length,
     total: teamMembers.length,
   };
 
@@ -105,96 +133,10 @@ function ManagerTimesheetDashboard() {
     pending: teamMembers.filter(e => e.yesterdayStatus === 'pending').length,
   };
 
-  // ✅ ACTIVITY DISPLAY COMPONENT
-  const ActivityDisplay = ({ activities }) => {
-    if (!activities || activities.length === 0) {
-      return null;
-    }
-
-    const morningActivities = activities.filter(a => a.slot === 'morning');
-    const afternoonActivities = activities.filter(a => a.slot === 'afternoon');
-
-    if (morningActivities.length === 0 && afternoonActivities.length === 0) {
-      return null;
-    }
-
-    return (
-      <div style={{
-        backgroundColor: '#f9fafb',
-        borderRadius: '6px',
-        padding: '16px',
-        marginTop: '16px',
-      }}>
-        <div style={{ marginBottom: '12px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
-          📝 Activities:
-        </div>
-
-        {morningActivities.length > 0 && (
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '12px' }}>
-              🌅 Morning
-            </div>
-            {morningActivities.map((activity, idx) => (
-              <div key={idx} style={{
-                backgroundColor: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                padding: '12px',
-                marginBottom: '8px',
-              }}>
-                <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px' }}>
-                  🕐 {activity.start_time} - {activity.end_time}
-                </div>
-                <div style={{ fontSize: '13px', fontWeight: '500', color: '#333', marginBottom: '6px' }}>
-                  {activity.description}
-                </div>
-                {activity.output && (
-                  <div style={{ fontSize: '12px', color: '#555', backgroundColor: '#f3f4f6', padding: '6px 8px', borderRadius: '4px' }}>
-                    Output: {activity.output}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {afternoonActivities.length > 0 && (
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '12px' }}>
-              🌄 Afternoon
-            </div>
-            {afternoonActivities.map((activity, idx) => (
-              <div key={idx} style={{
-                backgroundColor: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                padding: '12px',
-                marginBottom: '8px',
-              }}>
-                <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px' }}>
-                  🕐 {activity.start_time} - {activity.end_time}
-                </div>
-                <div style={{ fontSize: '13px', fontWeight: '500', color: '#333', marginBottom: '6px' }}>
-                  {activity.description}
-                </div>
-                {activity.output && (
-                  <div style={{ fontSize: '12px', color: '#555', backgroundColor: '#f3f4f6', padding: '6px 8px', borderRadius: '4px' }}>
-                    Output: {activity.output}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   // STYLES
   const containerStyle = {
     maxWidth: '1200px',
     margin: '0 auto',
-    padding: '40px 20px',
   };
 
   const headerStyle = {
@@ -307,12 +249,6 @@ function ManagerTimesheetDashboard() {
     color: '#333',
   };
 
-  const employeeInfoStyle = {
-    fontSize: '13px',
-    color: '#666',
-    marginBottom: '8px',
-  };
-
   const statusBadgeStyle = (status) => {
     let bgColor, textColor;
     if (status === 'filled') {
@@ -369,6 +305,19 @@ function ManagerTimesheetDashboard() {
     padding: '12px',
     borderRadius: '6px',
     marginBottom: '20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  };
+
+  const clickHintStyle = {
+    marginTop: '12px',
+    padding: '8px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '6px',
+    fontSize: '13px',
+    color: '#64748b',
+    textAlign: 'center',
   };
 
   // AUTHORIZATION CHECK
@@ -384,16 +333,32 @@ function ManagerTimesheetDashboard() {
     return <div style={loadingStyle}>Loading team timesheet data...</div>;
   }
 
-  if (error) {
-    return <div style={errorStyle}>⚠️ {error}</div>;
-  }
-
   return (
     <div style={containerStyle}>
+      {/* Error Message */}
+      {error && (
+        <div style={errorStyle}>
+          <span>⚠️ {error}</span>
+          <button 
+            onClick={() => setError('')}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: '#991B1B', 
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}
+          >
+            ✖
+          </button>
+        </div>
+      )}
+
       {/* HEADER */}
       <div style={headerStyle}>
         <h2 style={titleStyle}>
-          👨‍💼 Team Timesheet Manager
+          👥 Team Timesheet Dashboard
           <span style={roleStyleStyle}>{user.role}</span>
         </h2>
       </div>
@@ -407,10 +372,6 @@ function ManagerTimesheetDashboard() {
         <div style={statCardStyle('#FEF3C7')}>
           <div style={statValueStyle}>{stats.pending}</div>
           <div style={statLabelStyle}>Today Pending</div>
-        </div>
-        <div style={statCardStyle('#FEE2E2')}>
-          <div style={statValueStyle}>{stats.locked}</div>
-          <div style={statLabelStyle}>Locked</div>
         </div>
         <div style={statCardStyle('#EFF6FF')}>
           <div style={statValueStyle}>{stats.total}</div>
@@ -435,9 +396,6 @@ function ManagerTimesheetDashboard() {
         <button style={tabButtonStyle(activeTab === 'yesterday-pending')} onClick={() => setActiveTab('yesterday-pending')}>
           ⏳ Yesterday Pending ({yesterdayStats.pending})
         </button>
-        <button style={tabButtonStyle(activeTab === 'locked')} onClick={() => setActiveTab('locked')}>
-          🔒 Locked ({stats.locked})
-        </button>
         <button style={tabButtonStyle(activeTab === 'all')} onClick={() => setActiveTab('all')}>
           📋 All ({stats.total})
         </button>
@@ -446,13 +404,13 @@ function ManagerTimesheetDashboard() {
       {/* SEARCH */}
       <input
         type="text"
-        placeholder="🔍 Search employee name..."
+        placeholder="🔍 Search employee name or email..."
         value={searchEmployee}
         onChange={(e) => setSearchEmployee(e.target.value)}
         style={searchInputStyle}
       />
 
-      {/* ========== TODAY UPDATED ========== */}
+      {/* ========== TODAY UPDATED - CLICKABLE ========== */}
       {activeTab === 'today-updated' && (
         <div>
           {filteredEmployees.length === 0 ? (
@@ -462,29 +420,54 @@ function ManagerTimesheetDashboard() {
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewTimesheets(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
                   <div>
                     <div style={employeeNameStyle}>{emp.name}</div>
-                    <div style={employeeInfoStyle}>{emp.email} • {emp.designation}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email} • {emp.designation}
+                    </div>
                   </div>
                   <span style={statusBadgeStyle('filled')}>✅ Updated</span>
                 </div>
-                {emp.todayTimesheet && (
-                  <>
-                    <div style={hoursStyle}>
-                      ⏰ {emp.todayTimesheet.hoursLogged}h ({emp.todayTimesheet.startTime} - {emp.todayTimesheet.endTime})
-                    </div>
-                    <ActivityDisplay activities={emp.todayTimesheet.activities} />
-                  </>
-                )}
+                <div style={hoursStyle}>⏰ {emp.todayHours.toFixed(1)}h today</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <div style={detailStyle}>
+                    <strong>Total Hours:</strong> {emp.totalHours.toFixed(1)}h
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Filled Days:</strong> {emp.filledDays}
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Locked:</strong> {emp.lockedDays}
+                  </div>
+                </div>
+                <div style={clickHintStyle}>
+                  👆 Click to view all filled timesheets with details
+                </div>
               </div>
             ))
           )}
         </div>
       )}
 
-      {/* ========== TODAY PENDING ========== */}
+      {/* ========== TODAY PENDING - CLICKABLE ========== */}
       {activeTab === 'today-pending' && (
         <div>
           {filteredEmployees.length === 0 ? (
@@ -494,16 +477,48 @@ function ManagerTimesheetDashboard() {
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewTimesheets(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
                   <div>
                     <div style={employeeNameStyle}>{emp.name}</div>
-                    <div style={employeeInfoStyle}>{emp.email} • {emp.designation}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email} • {emp.designation}
+                    </div>
                   </div>
                   <span style={statusBadgeStyle('pending')}>⏳ Pending</span>
                 </div>
                 <div style={detailStyle}>
-                  <strong>Status:</strong> Timesheet not filled yet
+                  <strong>Status:</strong> Timesheet not filled yet for today
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <div style={detailStyle}>
+                    <strong>Total Hours:</strong> {emp.totalHours.toFixed(1)}h
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Filled Days:</strong> {emp.filledDays}
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Locked:</strong> {emp.lockedDays}
+                  </div>
+                </div>
+                <div style={clickHintStyle}>
+                  👆 Click to view previous filled timesheets
                 </div>
               </div>
             ))
@@ -511,7 +526,7 @@ function ManagerTimesheetDashboard() {
         </div>
       )}
 
-      {/* ========== YESTERDAY PENDING ========== */}
+      {/* ========== YESTERDAY PENDING - CLICKABLE ========== */}
       {activeTab === 'yesterday-pending' && (
         <div>
           {filteredEmployees.length === 0 ? (
@@ -521,43 +536,47 @@ function ManagerTimesheetDashboard() {
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewTimesheets(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
                   <div>
                     <div style={employeeNameStyle}>{emp.name}</div>
-                    <div style={employeeInfoStyle}>{emp.email} • {emp.designation}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email} • {emp.designation}
+                    </div>
                   </div>
                   <span style={statusBadgeStyle('pending')}>⏳ Pending</span>
                 </div>
-                <div style={detailStyle}>
-                  <strong>Status:</strong> Timesheet for yesterday not filled yet
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* ========== LOCKED ========== */}
-      {activeTab === 'locked' && (
-        <div>
-          {filteredEmployees.length === 0 ? (
-            <div style={emptyStateStyle}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
-              <p style={{ fontSize: '18px', fontWeight: '500' }}>No locked timesheets</p>
-            </div>
-          ) : (
-            filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
-                <div style={employeeHeaderStyle}>
-                  <div>
-                    <div style={employeeNameStyle}>{emp.name}</div>
-                    <div style={employeeInfoStyle}>{emp.email} • {emp.designation}</div>
+                {emp.yesterdayDate && (
+                  <div style={detailStyle}>
+                    <strong>📅 Pending Date:</strong> {new Date(emp.yesterdayDate).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
                   </div>
-                  <span style={statusBadgeStyle('locked')}>🔒 Locked</span>
-                </div>
+                )}
                 <div style={detailStyle}>
-                  <strong>Status:</strong> Timesheet is locked (older than 1 day)
+                  <strong>Status:</strong> Timesheet not filled yet
+                </div>
+                <div style={clickHintStyle}>
+                  👆 Click to view all filled timesheets
                 </div>
               </div>
             ))
@@ -565,7 +584,7 @@ function ManagerTimesheetDashboard() {
         </div>
       )}
 
-      {/* ========== ALL ========== */}
+      {/* ========== ALL - CLICKABLE ========== */}
       {activeTab === 'all' && (
         <div>
           {filteredEmployees.length === 0 ? (
@@ -575,36 +594,67 @@ function ManagerTimesheetDashboard() {
             </div>
           ) : (
             filteredEmployees.map((emp) => (
-              <div key={emp.id} style={cardStyle}>
+              <div 
+                key={emp.id} 
+                style={{
+                  ...cardStyle,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => handleViewTimesheets(emp)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
                 <div style={employeeHeaderStyle}>
                   <div>
                     <div style={employeeNameStyle}>{emp.name}</div>
-                    <div style={employeeInfoStyle}>{emp.email} • {emp.designation}</div>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      {emp.email} • {emp.designation}
+                    </div>
                   </div>
                   <span style={statusBadgeStyle(emp.todayStatus)}>
-                    {emp.todayStatus === 'filled' && '✅ Updated'}
-                    {emp.todayStatus === 'pending' && '⏳ Pending'}
-                    {emp.todayStatus === 'locked' && '🔒 Locked'}
+                    {emp.todayStatus === 'filled' ? '✅ Updated Today' : '⏳ Pending Today'}
                   </span>
                 </div>
-                <div style={detailStyle}>
-                  <strong>Today:</strong> {emp.todayStatus === 'filled' ? 'Updated' : emp.todayStatus === 'pending' ? 'Pending' : 'Locked'}
-                </div>
-                <div style={detailStyle}>
-                  <strong>Yesterday:</strong> {emp.yesterdayStatus === 'filled' ? 'Updated' : emp.yesterdayStatus === 'pending' ? 'Pending' : 'Locked'}
-                </div>
-                {emp.todayTimesheet && emp.todayTimesheet.hoursLogged && (
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#10B981' }}>
-                    ⏰ {emp.todayTimesheet.hoursLogged}h
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                  <div style={detailStyle}>
+                    <strong>Today:</strong> {emp.todayStatus === 'filled' ? `${emp.todayHours.toFixed(1)}h` : 'Pending'}
                   </div>
-                )}
-                {emp.todayTimesheet && emp.todayTimesheet.activities && emp.todayTimesheet.activities.length > 0 && (
-                  <ActivityDisplay activities={emp.todayTimesheet.activities} />
-                )}
+                  <div style={detailStyle}>
+                    <strong>Total Hours:</strong> {emp.totalHours.toFixed(1)}h
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Filled Days:</strong> {emp.filledDays}
+                  </div>
+                  <div style={detailStyle}>
+                    <strong>Locked:</strong> {emp.lockedDays}
+                  </div>
+                </div>
+                <div style={clickHintStyle}>
+                  👆 Click to view detailed timesheets
+                </div>
               </div>
             ))
           )}
         </div>
+      )}
+
+      {/* Employee Timesheet Modal */}
+      {showTimesheetModal && selectedEmployee && (
+        <EmployeeTimesheetModal
+          employee={selectedEmployee}
+          token={token}
+          onClose={() => {
+            setShowTimesheetModal(false);
+            setSelectedEmployee(null);
+          }}
+        />
       )}
     </div>
   );

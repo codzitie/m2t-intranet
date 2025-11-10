@@ -9,7 +9,7 @@ import LeaveCalendar from "./components/LeaveCalendar";
 import LoginPage from './components/LoginPage';
 import RoleSwitcher from "./components/RoleSwitcher";
 import TimesheetDashboard from "./components/timesheet/TimesheetDashboard";
-
+import AdminDashboard from "./components/admin/AdminDashboard"; // ✅ ADD THIS
 
 function PlaceholderPage({ title }) {
   return (
@@ -20,8 +20,7 @@ function PlaceholderPage({ title }) {
   );
 }
 
-
-// Protected Route Component
+// Protected Route Component (All authenticated users)
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useUser();
 
@@ -40,6 +39,31 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+// ✅ ADD THIS - Admin Route Component (Only Admin/HR/CEO)
+function AdminRoute({ children }) {
+  const { isAuthenticated, loading, user } = useUser();
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "100px", fontSize: "18px", color: "#666" }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Check if user has admin access
+  const isAdmin = user && ['Admin', 'HR', 'CEO'].includes(user.role);
+  
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
 
 function AppRoutes() {
   const { isAuthenticated } = useUser();
@@ -108,6 +132,16 @@ function AppRoutes() {
           } 
         />
 
+        {/* ✅ ADD THIS - Admin Route */}
+        <Route 
+          path="/admin" 
+          element={
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          } 
+        />
+
         {/* Catch all - redirect to login */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -118,11 +152,9 @@ function AppRoutes() {
   );
 }
 
-
 function App() {
   return (
     <UserProvider>
-      {/* ✅ WRAP WITH TIMESHEET PROVIDER */}
       <TimesheetProvider>
         <Router>
           <AppRoutes />
@@ -131,6 +163,5 @@ function App() {
     </UserProvider>
   );
 }
-
 
 export default App;

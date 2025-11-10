@@ -16,6 +16,7 @@ from auth import (
     router as auth_router  # ✅ ADD THIS
 )
 from routes.timesheets import router as timesheet_router
+from routes.admin import router as admin_router
 from tasks.scheduler import start_scheduler
 import logging
 
@@ -42,7 +43,7 @@ app.add_middleware(
 # ✅ REGISTER ROUTERS
 app.include_router(timesheet_router)
 app.include_router(auth_router)  # ✅ ADD THIS LINE
-
+app.include_router(admin_router)
 
 # ============= STARTUP EVENT - START SCHEDULER =============
 @app.on_event("startup")

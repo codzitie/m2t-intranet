@@ -1,0 +1,293 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+export default function CreateUser({ onSuccess }) {
+  const [formData, setFormData] = useState({
+    email: '',
+    name: '',
+    password: '',
+    role: 'Employee',
+    department: '',
+    designation: '',
+    supervisor_id: '',
+    join_date: new Date().toISOString().split('T')[0]
+  });
+  
+  const [supervisors, setSupervisors] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    fetchSupervisors();
+  }, []);
+
+  const fetchSupervisors = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('http://localhost:8000/api/admin/supervisors', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSupervisors(response.data);
+    } catch (error) {
+      console.error('Failed to fetch supervisors:', error);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('http://localhost:8000/api/admin/users', formData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setSuccess(`✅ User "${formData.name}" created successfully!`);
+      
+      // Reset form
+      setFormData({
+        email: '',
+        name: '',
+        password: '',
+        role: 'Employee',
+        department: '',
+        designation: '',
+        supervisor_id: '',
+        join_date: new Date().toISOString().split('T')[0]
+      });
+
+      // Callback to refresh stats
+      if (onSuccess) onSuccess();
+
+    } catch (error) {
+      setError(error.response?.data?.detail || 'Failed to create user');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  return (
+    <div style={{
+      background: '#fff',
+      border: '1px solid #e5e7eb',
+      borderRadius: '12px',
+      padding: '24px',
+      maxWidth: '700px'
+    }}>
+      <h2 style={{ margin: '0 0 20px', fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+        👤 Create New User
+      </h2>
+
+      {/* Success Message */}
+      {success && (
+        <div style={{
+          background: '#d1fae5',
+          border: '1px solid #6ee7b7',
+          color: '#065f46',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          fontSize: '14px'
+        }}>
+          {success}
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div style={{
+          background: '#fee2e2',
+          border: '1px solid #fecaca',
+          color: '#991b1b',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          fontSize: '14px'
+        }}>
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit}>
+        {/* Name */}
+        <FormField
+          label="Full Name"
+          name="name"
+          type="text"
+          value={formData.name}
+          onChange={handleChange}
+          placeholder="John Doe"
+          required
+        />
+
+        {/* Email */}
+        <FormField
+          label="Email"
+          name="email"
+          type="email"
+          value={formData.email}
+          onChange={handleChange}
+          placeholder="john.doe@m2t-ai.com"
+          required
+        />
+
+        {/* Password */}
+        <FormField
+          label="Password"
+          name="password"
+          type="password"
+          value={formData.password}
+          onChange={handleChange}
+          placeholder="••••••••"
+          required
+        />
+
+        {/* Role */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+            Role
+          </label>
+          <select
+            name="role"
+            value={formData.role}
+            onChange={handleChange}
+            required
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              fontSize: '14px',
+              background: '#fff'
+            }}
+          >
+            <option value="Employee">Employee</option>
+            <option value="Manager">Manager</option>
+            <option value="Team Lead">Team Lead</option>
+            <option value="HR">HR</option>
+            <option value="CEO">CEO</option>
+          </select>
+        </div>
+
+        {/* Department */}
+        <FormField
+          label="Department"
+          name="department"
+          type="text"
+          value={formData.department}
+          onChange={handleChange}
+          placeholder="Engineering"
+          required
+        />
+
+        {/* Designation */}
+        <FormField
+          label="Designation"
+          name="designation"
+          type="text"
+          value={formData.designation}
+          onChange={handleChange}
+          placeholder="Software Developer"
+          required
+        />
+
+        {/* Supervisor */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+            Supervisor (Manager/Team Lead)
+          </label>
+          <select
+            name="supervisor_id"
+            value={formData.supervisor_id}
+            onChange={handleChange}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              fontSize: '14px',
+              background: '#fff'
+            }}
+          >
+            <option value="">-- Select Supervisor (Optional) --</option>
+            {supervisors.map(sup => (
+              <option key={sup.id} value={sup.id}>
+                {sup.name} ({sup.role} - {sup.designation})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Join Date */}
+        <FormField
+          label="Join Date"
+          name="join_date"
+          type="date"
+          value={formData.join_date}
+          onChange={handleChange}
+          required
+        />
+
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: loading ? '#9ca3af' : 'linear-gradient(135deg, #2563eb, #1e40af)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          {loading ? 'Creating User...' : '✅ Create User'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// Reusable Form Field Component
+function FormField({ label, name, type, value, onChange, placeholder, required }) {
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+        {label} {required && <span style={{ color: '#ef4444' }}>*</span>}
+      </label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        required={required}
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          border: '1px solid #d1d5db',
+          borderRadius: '8px',
+          fontSize: '14px',
+          transition: 'border 0.2s'
+        }}
+        onFocus={(e) => e.target.style.borderColor = '#2563eb'}
+        onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+      />
+    </div>
+  );
+}

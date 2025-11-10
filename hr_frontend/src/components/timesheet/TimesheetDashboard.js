@@ -538,61 +538,61 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
         )}
       </div>
 
-      {(user.role === 'Manager' || user.role === 'HR') && (
-        <>
-          <div style={dividerStyle}>
-            <div style={dividerLabelStyle}>
-              {user.role === 'HR' ? 'HR Management' : 'Team Management'}
-            </div>
+      {(user.role === 'Manager' || user.role === 'Team Lead' || user.role === 'HR' || user.role === 'CEO') && (
+  <>
+    <div style={dividerStyle}>
+      <div style={dividerLabelStyle}>
+        {user.role === 'HR' || user.role === 'CEO' ? 'HR Management' : 'Team Management'}
+      </div>
+    </div>
+
+    {(user.role === 'Manager' || user.role === 'Team Lead') && (
+      <div style={managementSectionStyle}>
+        <div style={managementHeaderStyle}>
+          <div>
+            <h3 style={managementTitleStyle}>👥 Team Timesheet Management</h3>
+            <p style={managementDescStyle}>View your team members' timesheets</p>
           </div>
+          <button
+            onClick={() => setShowManagerView(!showManagerView)}
+            style={managementButtonStyle(showManagerView)}
+            onMouseEnter={(e) => {
+              if (!showManagerView) e.target.style.backgroundColor = '#059669';
+            }}
+            onMouseLeave={(e) => {
+              if (!showManagerView) e.target.style.backgroundColor = '#10B981';
+            }}
+          >
+            {showManagerView ? '← Back to My Dashboard' : 'View Team Management →'}
+          </button>
+        </div>
+      </div>
+    )}
 
-          {user.role === 'Manager' && (
-            <div style={managementSectionStyle}>
-              <div style={managementHeaderStyle}>
-                <div>
-                  <h3 style={managementTitleStyle}>👥 Team Timesheet Management</h3>
-                  <p style={managementDescStyle}>View your team members' timesheets</p>
-                </div>
-                <button
-                  onClick={() => setShowManagerView(!showManagerView)}
-                  style={managementButtonStyle(showManagerView)}
-                  onMouseEnter={(e) => {
-                    if (!showManagerView) e.target.style.backgroundColor = '#059669';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!showManagerView) e.target.style.backgroundColor = '#10B981';
-                  }}
-                >
-                  {showManagerView ? '← Back to My Dashboard' : 'View Team Management →'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {user.role === 'HR' && (
-            <div style={managementSectionStyle}>
-              <div style={managementHeaderStyle}>
-                <div>
-                  <h3 style={managementTitleStyle}>🏢 HR Dashboard</h3>
-                  <p style={managementDescStyle}>View all employee timesheets, manage approvals, and track attendance</p>
-                </div>
-                <button
-                  onClick={() => setShowAdminView(!showAdminView)}
-                  style={managementButtonStyle(showAdminView)}
-                  onMouseEnter={(e) => {
-                    if (!showAdminView) e.target.style.backgroundColor = '#003380';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!showAdminView) e.target.style.backgroundColor = '#004aad';
-                  }}
-                >
-                  {showAdminView ? '← Back to My Dashboard' : 'Open HR Dashboard →'}
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+    {(user.role === 'HR' || user.role === 'CEO') && (
+      <div style={managementSectionStyle}>
+        <div style={managementHeaderStyle}>
+          <div>
+            <h3 style={managementTitleStyle}>🏢 HR Dashboard</h3>
+            <p style={managementDescStyle}>View all employee timesheets, manage approvals, and track attendance</p>
+          </div>
+          <button
+            onClick={() => setShowAdminView(!showAdminView)}
+            style={managementButtonStyle(showAdminView)}
+            onMouseEnter={(e) => {
+              if (!showAdminView) e.target.style.backgroundColor = '#059669';
+            }}
+            onMouseLeave={(e) => {
+              if (!showAdminView) e.target.style.backgroundColor = '#10B981';
+            }}
+          >
+            {showAdminView ? '← Back to My Dashboard' : 'Open HR Dashboard →'}
+          </button>
+        </div>
+      </div>
+    )}
+  </>
+)}
 
       {!showManagerView && !showAdminView && (
         <>
