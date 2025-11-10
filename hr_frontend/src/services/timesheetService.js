@@ -1,6 +1,8 @@
 import axios from 'axios';
 
+
 const API_BASE_URL = 'http://localhost:8000/api';
+
 
 const timesheetService = {
   // ============= CREATE/UPDATE TIMESHEET =============
@@ -23,6 +25,7 @@ const timesheetService = {
     }
   },
 
+
   // ============= GET MONTH TIMESHEETS =============
   
   getMonthTimesheets: async (token, year, month) => {
@@ -40,6 +43,7 @@ const timesheetService = {
       throw error.response?.data || error.message;
     }
   },
+
 
   // ============= GET TIMESHEET STATS =============
   
@@ -59,6 +63,7 @@ const timesheetService = {
     }
   },
 
+
   // ============= GET EMPLOYEE TIMESHEETS (Manager/HR) =============
   
   getEmployeeTimesheets: async (token, employeeId, year, month) => {
@@ -76,6 +81,7 @@ const timesheetService = {
       throw error.response?.data || error.message;
     }
   },
+
 
   // ============= GET TEAM TIMESHEETS (Manager Only) =============
   
@@ -95,7 +101,8 @@ const timesheetService = {
     }
   },
 
-  // ============= ✅ GET TODAY STATUS FOR ALL EMPLOYEES (HR Only) =============
+
+  // ============= GET TODAY STATUS FOR ALL EMPLOYEES (HR Only) =============
   
   getTodayStatusAllEmployees: async (token) => {
     try {
@@ -112,6 +119,7 @@ const timesheetService = {
       throw error.response?.data || error.message;
     }
   },
+
 
   // ============= REQUEST UNLOCK =============
   
@@ -133,6 +141,26 @@ const timesheetService = {
     }
   },
 
+
+  // ============= ✅ GET USER'S OWN UNLOCK REQUESTS =============
+  
+  getMyUnlockRequests: async (token) => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/timesheets/my-unlock-requests`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
+
+
   // ============= GET PENDING UNLOCK REQUESTS (HR) =============
   
   getPendingUnlockRequests: async (token) => {
@@ -150,6 +178,7 @@ const timesheetService = {
       throw error.response?.data || error.message;
     }
   },
+
 
   // ============= APPROVE/REJECT UNLOCK =============
   
@@ -171,6 +200,7 @@ const timesheetService = {
     }
   },
 
+
   // ============= GET HR DASHBOARD =============
   
   getHRDashboard: async (token) => {
@@ -189,7 +219,9 @@ const timesheetService = {
     }
   },
 
+
   // ============= ACTIVITY TRACKER APIs =============
+
 
   createActivity: async (token, activityData) => {
     try {
@@ -209,6 +241,7 @@ const timesheetService = {
     }
   },
 
+
   getActivitiesByDate: async (token, date) => {
     try {
       const response = await axios.get(
@@ -224,6 +257,7 @@ const timesheetService = {
       throw error.response?.data || error.message;
     }
   },
+
 
   updateActivity: async (token, activityId, activityData) => {
     try {
@@ -243,6 +277,7 @@ const timesheetService = {
     }
   },
 
+
   deleteActivity: async (token, activityId) => {
     try {
       const response = await axios.delete(
@@ -259,5 +294,6 @@ const timesheetService = {
     }
   }
 };
+
 
 export default timesheetService;

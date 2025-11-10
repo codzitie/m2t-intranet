@@ -6,9 +6,12 @@ from database import get_db, User, TimesheetEntry, TimesheetActivity, TimesheetU
 from auth import get_current_user, require_permission
 import uuid
 
+
 router = APIRouter(prefix="/api/timesheets", tags=["timesheets"])
 
+
 # ============= HELPER FUNCTIONS =============
+
 
 def time_to_minutes(time_str: str) -> int:
     """Convert HH:MM to minutes"""
@@ -18,13 +21,16 @@ def time_to_minutes(time_str: str) -> int:
     except:
         return 0
 
+
 def minutes_to_hours(minutes: int) -> float:
     """Convert minutes to hours (e.g., 510 -> 8.5)"""
     return minutes / 60 if minutes else 0
 
+
 def validate_timesheet_hours(hours: float) -> bool:
     """Validate if hours is within 7-8.5 range"""
     return 7 <= hours <= 8.5
+
 
 def auto_lock_old_entries(entries, today):
     """✅ AUTO-LOCK entries older than 2 days with no data"""
@@ -36,7 +42,9 @@ def auto_lock_old_entries(entries, today):
             entry.is_locked = True
     return entries
 
+
 # ============= CREATE TIMESHEET ENTRY =============
+
 
 @router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
 def create_timesheet(
@@ -62,7 +70,14 @@ def create_timesheet(
         TimesheetEntry.date == entry_date
     ).first()
     
-    if existing and existing.is_locked:
+    # ✅ CHECK FOR APPROVED UNLOCK
+    approved_unlock = db.query(TimesheetUnlockRequest).filter(
+        TimesheetUnlockRequest.user_id == current_user.id,
+        TimesheetUnlockRequest.date == entry_date,
+        TimesheetUnlockRequest.status == "approved"
+    ).first()
+    
+    if existing and existing.is_locked and not approved_unlock:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This timesheet entry is locked. Request unlock if needed."
@@ -87,7 +102,7 @@ def create_timesheet(
     
     # Update or create entry
     if existing:
-        print(f"🔄 UPDATING existing entry for {entry_date}")  # ✅ DEBUG LOG
+        print(f"🔄 UPDATING existing entry for {entry_date}")
         existing.start_time = start_time
         existing.end_time = end_time
         existing.hours_logged = hours_minutes
@@ -97,7 +112,7 @@ def create_timesheet(
         existing.updated_at = datetime.utcnow()
         entry = existing
     else:
-        print(f"✅ CREATING new entry for {entry_date}")  # ✅ DEBUG LOG
+        print(f"✅ CREATING new entry for {entry_date}")
         entry = TimesheetEntry(
             id=str(uuid.uuid4()),
             user_id=current_user.id,
@@ -135,7 +150,6 @@ def create_timesheet(
     db.commit()
     db.refresh(entry)
     
-    # ✅ RETURN ACTIVITIES IN RESPONSE
     return {
         "id": entry.id,
         "user_id": entry.user_id,
@@ -146,7 +160,7 @@ def create_timesheet(
         "description": entry.description,
         "status": entry.status,
         "is_locked": entry.is_locked,
-        "activities": [  # ✅ ADDED THIS
+        "activities": [
             {
                 "id": a.id,
                 "slot": a.slot,
@@ -163,6 +177,7 @@ def create_timesheet(
 
 # ============= GET TIMESHEET FOR MONTH =============
 
+
 @router.get("/month/{year}/{month}")
 def get_month_timesheets(
     year: int,
@@ -170,7 +185,7 @@ def get_month_timesheets(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all timesheet entries for a specific month with auto-locking"""
+    """Get all timesheet entries for a specific month with unlock request awareness"""
     
     start_date = date(year, month, 1)
     if month == 12:
@@ -186,11 +201,24 @@ def get_month_timesheets(
         TimesheetEntry.date <= end_date
     ).order_by(TimesheetEntry.date).all()
     
+    # ✅ GET APPROVED UNLOCK REQUESTS
+    approved_unlocks = db.query(TimesheetUnlockRequest).filter(
+        TimesheetUnlockRequest.user_id == current_user.id,
+        TimesheetUnlockRequest.status == "approved",
+        TimesheetUnlockRequest.date >= start_date,
+        TimesheetUnlockRequest.date <= end_date
+    ).all()
+    
+    approved_unlock_map = {req.date: req for req in approved_unlocks}
+    
     # ✅ AUTO-LOCK OLD ENTRIES
     entries = auto_lock_old_entries(entries, today)
     
     result = []
     for entry in entries:
+        # ✅ CHECK IF THIS DATE HAS APPROVED UNLOCK
+        has_approved_unlock = entry.date in approved_unlock_map
+        
         result.append({
             "id": entry.id,
             "date": str(entry.date),
@@ -199,8 +227,9 @@ def get_month_timesheets(
             "hours_logged": entry.hours_logged if entry.hours_logged else 0,
             "description": entry.description,
             "status": entry.status,
-            "is_locked": entry.is_locked,  # ✅ NOW RETURNS LOCKED STATUS
+            "is_locked": entry.is_locked and not has_approved_unlock,  # ✅ OVERRIDE LOCKED IF APPROVED
             "is_absent": entry.is_absent,
+            "has_approved_unlock": has_approved_unlock,  # ✅ ADD FLAG
             "activities": [
                 {
                     "id": a.id,
@@ -216,9 +245,9 @@ def get_month_timesheets(
     
     return result
 
-# ============= GET TIMESHEET STATS =============
 
 # ============= GET TIMESHEET STATS =============
+
 
 @router.get("/stats/{year}/{month}")
 def get_timesheet_stats(
@@ -227,7 +256,7 @@ def get_timesheet_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get timesheet statistics with auto-lock logic"""
+    """Get timesheet statistics with unlock request awareness"""
     
     start_date = date(year, month, 1)
     if month == 12:
@@ -243,6 +272,16 @@ def get_timesheet_stats(
         TimesheetEntry.date >= start_date,
         TimesheetEntry.date <= end_date
     ).all()
+    
+    # ✅ GET APPROVED UNLOCK REQUESTS FOR THIS MONTH
+    approved_unlocks = db.query(TimesheetUnlockRequest).filter(
+        TimesheetUnlockRequest.user_id == current_user.id,
+        TimesheetUnlockRequest.status == "approved",
+        TimesheetUnlockRequest.date >= start_date,
+        TimesheetUnlockRequest.date <= end_date
+    ).all()
+    
+    approved_unlock_dates = {req.date for req in approved_unlocks}
     
     filled = 0
     pending = 0
@@ -263,14 +302,14 @@ def get_timesheet_stats(
         
         if e.is_absent:
             absent += 1
-        elif e.is_locked:
-            # ✅ COUNT ACTUAL DB LOCKED
+        elif e.is_locked and e.date not in approved_unlock_dates:
+            # ✅ ONLY COUNT AS LOCKED IF NO APPROVED UNLOCK
             locked += 1
         elif e.status == "filled" or e.hours_logged:
             filled += 1
         else:
             # ✅ AUTO-LOCK LOGIC: Entries older than yesterday with no data
-            if e.date < yesterday and not e.hours_logged:
+            if e.date < yesterday and not e.hours_logged and e.date not in approved_unlock_dates:
                 locked += 1
             else:
                 pending += 1
@@ -281,14 +320,15 @@ def get_timesheet_stats(
     return {
         "filled_days": filled,
         "pending_days": pending,
-        "locked_days": locked,
+        "locked_days": locked,  # ✅ NOW EXCLUDES APPROVED UNLOCKS
         "absent_days": absent,
         "total_days": total,
         "total_hours": round(total_hours_formatted, 2)
     }
-    
- 
+
+
 # ============= GET EMPLOYEE TIMESHEETS (Manager/HR) =============
+
 
 @router.get("/employee/{employee_id}/month/{year}/{month}")
 def get_employee_month_timesheets(
@@ -322,8 +362,6 @@ def get_employee_month_timesheets(
         TimesheetEntry.date <= end_date
     ).order_by(TimesheetEntry.date).all()
     
-    # ❌ REMOVED AUTO-LOCK - Just return DB values
-    
     result = []
     for entry in entries:
         activities_list = []
@@ -347,15 +385,15 @@ def get_employee_month_timesheets(
             "hours_logged": entry.hours_logged,
             "description": entry.description,
             "status": entry.status,
-            "is_locked": entry.is_locked,  # ✅ RETURNS ACTUAL DB VALUE
+            "is_locked": entry.is_locked,
             "activities": activities_list
         })
     
     return result
 
 
-
 # ============= UNLOCK REQUEST =============
+
 
 @router.post("/unlock-request", response_model=dict, status_code=status.HTTP_201_CREATED)
 def request_unlock(
@@ -424,7 +462,39 @@ def request_unlock(
         "message": "Unlock request submitted successfully"
     }
 
+
+# ============= GET USER'S OWN UNLOCK REQUESTS =============
+
+
+@router.get("/my-unlock-requests")
+def get_my_unlock_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get current user's unlock requests"""
+    
+    requests = db.query(TimesheetUnlockRequest).filter(
+        TimesheetUnlockRequest.user_id == current_user.id
+    ).order_by(TimesheetUnlockRequest.requested_on.desc()).all()
+    
+    result = []
+    for req in requests:
+        result.append({
+            "id": req.id,
+            "timesheet_id": req.timesheet_id,
+            "date": str(req.date),
+            "reason": req.reason,
+            "status": req.status,
+            "requested_on": str(req.requested_on),
+            "approved_on": str(req.approved_on) if req.approved_on else None,
+            "remarks": req.remarks
+        })
+    
+    return result
+
+
 # ============= GET PENDING UNLOCK REQUESTS (HR) =============
+
 
 @router.get("/unlock-requests/pending")
 def get_pending_unlock_requests(
@@ -453,7 +523,9 @@ def get_pending_unlock_requests(
     
     return result
 
+
 # ============= APPROVE/REJECT UNLOCK REQUEST =============
+
 
 @router.put("/unlock-requests/{request_id}")
 def approve_unlock_request(
@@ -482,7 +554,7 @@ def approve_unlock_request(
         ).first()
         if timesheet:
             timesheet.is_locked = False
-            timesheet.status = "pending"  # ✅ RESET TO PENDING FOR EDITING
+            timesheet.status = "pending"
     
     employee = db.query(User).filter(User.id == unlock_req.user_id).first()
     status_msg = "approved" if approval_data.get("status") == "approved" else "rejected"
@@ -504,9 +576,9 @@ def approve_unlock_request(
         "message": f"Unlock request {status_msg} successfully"
     }
 
-# ============= HR TIMESHEET DASHBOARD =============
 
 # ============= HR TIMESHEET DASHBOARD =============
+
 
 @router.get("/hr/dashboard")
 def get_hr_timesheet_dashboard(
@@ -548,7 +620,16 @@ def get_hr_timesheet_dashboard(
             TimesheetEntry.date <= today
         ).all()
         
-        # ✅ STRICT COUNT - ONLY DB LOCKED ENTRIES
+        # ✅ GET APPROVED UNLOCKS FOR THIS USER
+        approved_unlocks = db.query(TimesheetUnlockRequest).filter(
+            TimesheetUnlockRequest.user_id == user.id,
+            TimesheetUnlockRequest.status == "approved",
+            TimesheetUnlockRequest.date >= month_start,
+            TimesheetUnlockRequest.date <= today
+        ).all()
+        
+        approved_unlock_dates = {req.date for req in approved_unlocks}
+        
         filled = 0
         pending = 0
         locked = 0
@@ -562,8 +643,8 @@ def get_hr_timesheet_dashboard(
             if e.date > today:
                 continue
             
-            # ✅ ONLY COUNT ACTUAL DB LOCKED (NO AUTO-LOCK LOGIC)
-            if e.is_locked:
+            # ✅ EXCLUDE APPROVED UNLOCKS FROM LOCKED COUNT
+            if e.is_locked and e.date not in approved_unlock_dates:
                 locked += 1
             elif e.status == "filled" or e.hours_logged:
                 filled += 1
@@ -573,11 +654,14 @@ def get_hr_timesheet_dashboard(
         stats["month_summary"][user.name] = {
             "filled": filled,
             "pending": pending,
-            "locked": locked,  # ✅ NOW ONLY COUNTS DB LOCKED
+            "locked": locked,
             "total_hours": round(minutes_to_hours(sum(e.hours_logged or 0 for e in month_entries)), 2)
         }
     
     return stats
+
+
+# ============= ACTIVITIES =============
 
 
 @router.post("/activities", status_code=status.HTTP_201_CREATED)
@@ -643,13 +727,12 @@ def create_standalone_activity(
 
 @router.get("/activities/{date_str}")
 def get_activities_by_date(
-    date_str: str,  # ✅ RENAMED from 'date' to 'date_str'
+    date_str: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get all activities for a specific date"""
     
-    # ✅ NOW THIS WORKS
     entry_date = date.fromisoformat(date_str)
     
     entry = db.query(TimesheetEntry).filter(
@@ -731,9 +814,8 @@ def delete_activity(
     return {"message": "Activity deleted successfully"}
 
 
+# ============= TEAM TIMESHEETS =============
 
-
-# ============= GET TEAM MEMBERS' TIMESHEETS (Manager Only) =============
 
 @router.get("/team/{year}/{month}")
 def get_team_timesheets(
@@ -748,7 +830,6 @@ def get_team_timesheets(
     - Returns timesheets for all employees reporting to this user
     """
     
-    # ✅ ALLOW MULTIPLE ROLES
     ALLOWED_ROLES = ['Manager', 'Team Lead', 'CEO', 'Founder', 'HR']
     
     if current_user.role not in ALLOWED_ROLES:
@@ -757,7 +838,6 @@ def get_team_timesheets(
             detail=f"Only {', '.join(ALLOWED_ROLES)} can access team timesheets"
         )
     
-    # ✅ GET ALL EMPLOYEES REPORTING TO THIS USER
     team_members = db.query(User).filter(
         User.supervisor_id == current_user.id
     ).all()
@@ -765,14 +845,12 @@ def get_team_timesheets(
     if not team_members:
         return []
     
-    # ✅ GET FIRST AND LAST DAY OF MONTH
     start_date = date(year, month, 1)
     if month == 12:
         end_date = date(year + 1, 1, 1) - timedelta(days=1)
     else:
         end_date = date(year, month + 1, 1) - timedelta(days=1)
     
-    # ✅ GET TIMESHEETS FOR ALL TEAM MEMBERS
     result = []
     
     for member in team_members:
@@ -816,6 +894,9 @@ def get_team_timesheets(
     return result
 
 
+# ============= HR TODAY STATUS =============
+
+
 @router.get("/hr/today-status")
 def get_today_status_all_employees(
     db: Session = Depends(get_db),
@@ -857,7 +938,7 @@ def get_today_status_all_employees(
             "designation": employee.designation,
             "today_status": today_entry.status if today_entry else 'pending',
             "yesterday_status": yesterday_entry.status if yesterday_entry else 'pending',
-            "yesterday_date": str(yesterday),  # ✅ ADD THIS
+            "yesterday_date": str(yesterday),
             "today_hours": minutes_to_hours(today_entry.hours_logged) if today_entry and today_entry.hours_logged else 0,
             "is_locked_today": today_entry.is_locked if today_entry else False,
         })

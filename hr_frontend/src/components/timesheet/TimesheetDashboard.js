@@ -5,6 +5,8 @@ import TimesheetCalendar from './TimesheetCalendar';
 import ActivityTracker from './ActivityTracker';
 import ManagerTimesheetDashboard from './ManagerTimesheetDashboard';
 import AdminTimesheetDashboard from './AdminTimesheetDashboard';
+import UnlockRequestTab from './UnlockRequestTab';
+
 
 function TimesheetDashboard() {
   const { user, token } = useUser();
@@ -24,6 +26,7 @@ function TimesheetDashboard() {
   const [error, setError] = useState('');
   const [isCurrentMonth, setIsCurrentMonth] = useState(true);
 
+
   // ============= FETCH TIMESHEET DATA FROM API =============
   useEffect(() => {
     console.log('🔍 useEffect triggered');
@@ -39,6 +42,7 @@ function TimesheetDashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, token, currentMonth]);
+
 
   const loadTimesheetData = async () => {
     try {
@@ -58,16 +62,16 @@ function TimesheetDashboard() {
 
       console.log(`📅 Fetching: /api/timesheets/month/${year}/${month}`);
 
-      // ✅ Get timesheet entries
+      // ✅ Get timesheet entries (now includes has_approved_unlock)
       const entries = await timesheetService.getMonthTimesheets(token, year, month);
       console.log('✅ Got entries from API:', entries);
       
       // ✅ DEBUG: Check what dates we got
       entries.forEach((entry, index) => {
-        console.log(`📅 [${index}] Entry date: "${entry.date}" | Type: ${typeof entry.date}`);
+        console.log(`📅 [${index}] Entry date: "${entry.date}" | is_locked: ${entry.is_locked} | has_approved_unlock: ${entry.has_approved_unlock}`);
       });
       
-      // ✅ GET STATS FROM API (Backend calculates with auto-lock logic)
+      // ✅ GET STATS FROM API (Backend now excludes approved unlocks from locked count)
       const statsData = await timesheetService.getTimesheetStats(token, year, month);
       console.log('✅ Got stats from API:', statsData);
 
@@ -81,7 +85,7 @@ function TimesheetDashboard() {
       const transformedStats = {
         filledDays: statsData.filled_days || 0,
         pendingDays: statsData.pending_days || 0,
-        lockedDays: statsData.locked_days || 0,
+        lockedDays: statsData.locked_days || 0,  // ✅ Now correct from backend
         absenceDays: statsData.absent_days || 0,
         totalDays: statsData.total_days || 0,
       };
@@ -101,153 +105,164 @@ function TimesheetDashboard() {
     }
   };
 
+
   // ✅ RELOAD CALLBACK FOR CALENDAR
   const reloadTimesheetData = async () => {
     console.log('🔄 Reloading timesheet data...');
     await loadTimesheetData();
   };
 
+
   // ============= FORMAT API DATA FOR FRONTEND =============
-const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
-  const year = monthDate.getFullYear();
-  const month = monthDate.getMonth();
-  const lastDay = new Date(year, month + 1, 0);
-  const daysInMonth = lastDay.getDate();
+  const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
 
-  const data = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    const data = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  // ✅ CREATE TODAY'S DATE STRING
-  const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  
-  // ✅ Calculate yesterday (1 day ago)
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayDateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-  // ✅ PAYROLL PERIOD CHECK: If today is 25th or later, unlock remaining days of month
-  const currentDayOfMonth = today.getDate();
-  const isPayrollPeriod = currentDayOfMonth >= 25;
-
-  const entriesMap = {};
-  if (Array.isArray(apiEntries)) {
-    apiEntries.forEach(entry => {
-      entriesMap[entry.date] = entry;
-    });
-  }
-
-  for (let i = 1; i <= daysInMonth; i++) {
-    const currentDate = new Date(year, month, i);
-    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+    // ✅ CREATE TODAY'S DATE STRING
+    const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     
-    const isWeekend = currentDate.getDay() === 0;
-    const isToday = dateStr === todayDateStr;
-    const isYesterday = dateStr === yesterdayDateStr;
-    const isPast = dateStr < todayDateStr;
-    const isFuture = dateStr > todayDateStr;
+    // ✅ Calculate yesterday (1 day ago)
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
 
-    const apiEntry = entriesMap[dateStr];
+    // ✅ PAYROLL PERIOD CHECK: If today is 25th or later, unlock remaining days of month
+    const currentDayOfMonth = today.getDate();
+    const isPayrollPeriod = currentDayOfMonth >= 25;
 
-    // ✅ PAYROLL UNLOCK: If today >= 25th and viewing current month, unlock 26-31
-    const isPayrollUnlocked = isCurrentMonth && isPayrollPeriod && i >= 26 && i <= daysInMonth;
-
-    let hoursLogged = null;
-    let status = 'future';
-    let isLocked = false;
-    let isEditable = false;
-    let description = '';
-    let activities = [];
-    let startTime = '';
-    let endTime = '';
-    let isAbsent = false;
-
-    if (isWeekend) {
-      // ✅ WEEKENDS - NOT EDITABLE
-      status = 'weekend';
-      isLocked = false;
-      isEditable = false;
-    } else if (apiEntry) {
-      // ✅ HAS DATA FROM API
-      status = apiEntry.status;
-      isLocked = apiEntry.is_locked;
-      isAbsent = apiEntry.is_absent;
-      hoursLogged = apiEntry.hours_logged ? (apiEntry.hours_logged / 60).toFixed(1) : null;
-      description = apiEntry.description;
-      activities = apiEntry.activities || [];
-      startTime = apiEntry.start_time;
-      endTime = apiEntry.end_time;
-      
-      // ✅ PAYROLL UNLOCK: Even if locked by system, unlock if in payroll period
-      if (isPayrollUnlocked && isLocked && !isAbsent) {
-        isLocked = false;
-        status = 'pending';
-      }
-      
-      isEditable = !isLocked && !isFuture;
-    } else if (isFuture) {
-      // ✅ FUTURE DATES
-      if (isPayrollUnlocked) {
-        // ✅ PAYROLL PERIOD: Unlock future dates 26-31
-        status = 'pending';
-        isLocked = false;
-        isEditable = true;
-      } else {
-        // ✅ NORMAL FUTURE: Not editable
-        status = 'future';
-        isLocked = false;
-        isEditable = false;
-      }
-    } else if (isToday) {
-      // ✅ TODAY - EDITABLE, PENDING
-      status = 'pending';
-      isLocked = false;
-      isEditable = isCurrentMonth;
-    } else if (isYesterday) {
-      // ✅ YESTERDAY (1 day ago) - STILL EDITABLE, PENDING
-      status = 'pending';
-      isLocked = false;
-      isEditable = isCurrentMonth;
-    } else if (isPast && !isWeekend) {
-      // ✅ OLDER THAN 1 DAY
-      if (isPayrollUnlocked) {
-        // ✅ PAYROLL PERIOD: Unlock if 26-31
-        status = 'pending';
-        isLocked = false;
-        isEditable = true;
-      } else {
-        // ✅ NORMAL PAST: LOCKED
-        status = 'locked';
-        isLocked = true;
-        isEditable = false;
-      }
+    const entriesMap = {};
+    if (Array.isArray(apiEntries)) {
+      apiEntries.forEach(entry => {
+        entriesMap[entry.date] = entry;
+      });
     }
 
-    data.push({
-      id: apiEntry?.id,
-      date: currentDate,
-      day: i,
-      isWeekend,
-      isToday,
-      isPast,
-      isFuture,
-      hoursLogged,
-      status,
-      isEditable,
-      isLocked,
-      isAbsent,
-      description,
-      activities,
-      startTime,
-      endTime,
-      isPayrollUnlocked, // ✅ ADD FLAG
-    });
-  }
+    for (let i = 1; i <= daysInMonth; i++) {
+      const currentDate = new Date(year, month, i);
+      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+      
+      const isWeekend = currentDate.getDay() === 0;
+      const isToday = dateStr === todayDateStr;
+      const isYesterday = dateStr === yesterdayDateStr;
+      const isPast = dateStr < todayDateStr;
+      const isFuture = dateStr > todayDateStr;
 
-  return data;
-};
+      const apiEntry = entriesMap[dateStr];
 
+      // ✅ PAYROLL UNLOCK: If today >= 25th and viewing current month, unlock 26-31
+      const isPayrollUnlocked = isCurrentMonth && isPayrollPeriod && i >= 26 && i <= daysInMonth;
 
+      let hoursLogged = null;
+      let status = 'future';
+      let isLocked = false;
+      let isEditable = false;
+      let description = '';
+      let activities = [];
+      let startTime = '';
+      let endTime = '';
+      let isAbsent = false;
+      let hasApprovedUnlock = false;
+
+      if (isWeekend) {
+        // ✅ WEEKENDS - NOT EDITABLE
+        status = 'weekend';
+        isLocked = false;
+        isEditable = false;
+      } else if (apiEntry) {
+        // ✅ HAS DATA FROM API - USE BACKEND VALUES
+        status = apiEntry.status;
+        isLocked = apiEntry.is_locked;  // ✅ Backend already handles approved unlocks
+        isAbsent = apiEntry.is_absent;
+        hasApprovedUnlock = apiEntry.has_approved_unlock || false;
+        hoursLogged = apiEntry.hours_logged ? (apiEntry.hours_logged / 60).toFixed(1) : null;
+        description = apiEntry.description;
+        activities = apiEntry.activities || [];
+        startTime = apiEntry.start_time;
+        endTime = apiEntry.end_time;
+        
+        // ✅ PAYROLL UNLOCK: Even if locked by system, unlock if in payroll period
+        if (isPayrollUnlocked && isLocked && !isAbsent) {
+          isLocked = false;
+          status = 'pending';
+        }
+        
+        // ✅ APPROVED UNLOCK: If has approved unlock, show as editable pending
+        if (hasApprovedUnlock && !isAbsent) {
+          isLocked = false;
+          if (status === 'locked') {
+            status = 'pending';
+          }
+        }
+        
+        isEditable = !isLocked && !isFuture;
+      } else if (isFuture) {
+        // ✅ FUTURE DATES
+        if (isPayrollUnlocked) {
+          // ✅ PAYROLL PERIOD: Unlock future dates 26-31
+          status = 'pending';
+          isLocked = false;
+          isEditable = true;
+        } else {
+          // ✅ NORMAL FUTURE: Not editable
+          status = 'future';
+          isLocked = false;
+          isEditable = false;
+        }
+      } else if (isToday) {
+        // ✅ TODAY - EDITABLE, PENDING
+        status = 'pending';
+        isLocked = false;
+        isEditable = isCurrentMonth;
+      } else if (isYesterday) {
+        // ✅ YESTERDAY (1 day ago) - STILL EDITABLE, PENDING
+        status = 'pending';
+        isLocked = false;
+        isEditable = isCurrentMonth;
+      } else if (isPast && !isWeekend) {
+        // ✅ OLDER THAN 1 DAY
+        if (isPayrollUnlocked) {
+          // ✅ PAYROLL PERIOD: Unlock if 26-31
+          status = 'pending';
+          isLocked = false;
+          isEditable = true;
+        } else {
+          // ✅ NORMAL PAST: LOCKED
+          status = 'locked';
+          isLocked = true;
+          isEditable = false;
+        }
+      }
+
+      data.push({
+        id: apiEntry?.id,
+        date: currentDate,
+        day: i,
+        isWeekend,
+        isToday,
+        isPast,
+        isFuture,
+        hoursLogged,
+        status,
+        isEditable,
+        isLocked,
+        isAbsent,
+        hasApprovedUnlock,  // ✅ ADD FLAG
+        description,
+        activities,
+        startTime,
+        endTime,
+        isPayrollUnlocked,
+      });
+    }
+
+    return data;
+  };
 
 
   const handleCalendarDataUpdate = (updatedData) => {
@@ -255,20 +270,24 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
     setTimesheetData(updatedData);
   };
 
+
   const goToPreviousMonth = () => {
     console.log('⬅️ Going to previous month');
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
   };
+
 
   const goToNextMonth = () => {
     console.log('➡️ Going to next month');
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
   };
 
+
   const goToCurrentMonth = () => {
     console.log('📅 Going to current month');
     setCurrentMonth(new Date());
   };
+
 
   // ============= STYLES =============
   const containerStyle = {
@@ -467,6 +486,7 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
     fontWeight: '500',
   };
 
+
   // ========== RENDER ==========
 
   if (!user) {
@@ -539,60 +559,60 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
       </div>
 
       {(user.role === 'Manager' || user.role === 'Team Lead' || user.role === 'HR' || user.role === 'CEO') && (
-  <>
-    <div style={dividerStyle}>
-      <div style={dividerLabelStyle}>
-        {user.role === 'HR' || user.role === 'CEO' ? 'HR Management' : 'Team Management'}
-      </div>
-    </div>
-
-    {(user.role === 'Manager' || user.role === 'Team Lead') && (
-      <div style={managementSectionStyle}>
-        <div style={managementHeaderStyle}>
-          <div>
-            <h3 style={managementTitleStyle}>👥 Team Timesheet Management</h3>
-            <p style={managementDescStyle}>View your team members' timesheets</p>
+        <>
+          <div style={dividerStyle}>
+            <div style={dividerLabelStyle}>
+              {user.role === 'HR' || user.role === 'CEO' ? 'HR Management' : 'Team Management'}
+            </div>
           </div>
-          <button
-            onClick={() => setShowManagerView(!showManagerView)}
-            style={managementButtonStyle(showManagerView)}
-            onMouseEnter={(e) => {
-              if (!showManagerView) e.target.style.backgroundColor = '#059669';
-            }}
-            onMouseLeave={(e) => {
-              if (!showManagerView) e.target.style.backgroundColor = '#10B981';
-            }}
-          >
-            {showManagerView ? '← Back to My Dashboard' : 'View Team Management →'}
-          </button>
-        </div>
-      </div>
-    )}
 
-    {(user.role === 'HR' || user.role === 'CEO') && (
-      <div style={managementSectionStyle}>
-        <div style={managementHeaderStyle}>
-          <div>
-            <h3 style={managementTitleStyle}>🏢 HR Dashboard</h3>
-            <p style={managementDescStyle}>View all employee timesheets, manage approvals, and track attendance</p>
-          </div>
-          <button
-            onClick={() => setShowAdminView(!showAdminView)}
-            style={managementButtonStyle(showAdminView)}
-            onMouseEnter={(e) => {
-              if (!showAdminView) e.target.style.backgroundColor = '#059669';
-            }}
-            onMouseLeave={(e) => {
-              if (!showAdminView) e.target.style.backgroundColor = '#10B981';
-            }}
-          >
-            {showAdminView ? '← Back to My Dashboard' : 'Open HR Dashboard →'}
-          </button>
-        </div>
-      </div>
-    )}
-  </>
-)}
+          {(user.role === 'Manager' || user.role === 'Team Lead') && (
+            <div style={managementSectionStyle}>
+              <div style={managementHeaderStyle}>
+                <div>
+                  <h3 style={managementTitleStyle}>👥 Team Timesheet Management</h3>
+                  <p style={managementDescStyle}>View your team members' timesheets</p>
+                </div>
+                <button
+                  onClick={() => setShowManagerView(!showManagerView)}
+                  style={managementButtonStyle(showManagerView)}
+                  onMouseEnter={(e) => {
+                    if (!showManagerView) e.target.style.backgroundColor = '#059669';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!showManagerView) e.target.style.backgroundColor = '#10B981';
+                  }}
+                >
+                  {showManagerView ? '← Back to My Dashboard' : 'View Team Management →'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(user.role === 'HR' || user.role === 'CEO') && (
+            <div style={managementSectionStyle}>
+              <div style={managementHeaderStyle}>
+                <div>
+                  <h3 style={managementTitleStyle}>🏢 HR Dashboard</h3>
+                  <p style={managementDescStyle}>View all employee timesheets, manage approvals, and track attendance</p>
+                </div>
+                <button
+                  onClick={() => setShowAdminView(!showAdminView)}
+                  style={managementButtonStyle(showAdminView)}
+                  onMouseEnter={(e) => {
+                    if (!showAdminView) e.target.style.backgroundColor = '#059669';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!showAdminView) e.target.style.backgroundColor = '#10B981';
+                  }}
+                >
+                  {showAdminView ? '← Back to My Dashboard' : 'Open HR Dashboard →'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {!showManagerView && !showAdminView && (
         <>
@@ -608,6 +628,13 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
               onClick={() => setActiveTab('activities')}
             >
               📝 Activities
+            </button>
+            {/* ✅ NEW UNLOCK REQUEST TAB */}
+            <button 
+              style={tabButtonStyle(activeTab === 'unlock-requests')} 
+              onClick={() => setActiveTab('unlock-requests')}
+            >
+              🔓 Request Unlock
             </button>
           </div>
 
@@ -655,6 +682,9 @@ const formatApiDataForFrontend = (apiEntries, monthDate, isCurrentMonth) => {
           )}
 
           {activeTab === 'activities' && <ActivityTracker />}
+
+          {/* ✅ NEW UNLOCK REQUEST TAB CONTENT */}
+          {activeTab === 'unlock-requests' && <UnlockRequestTab />}
         </>
       )}
 

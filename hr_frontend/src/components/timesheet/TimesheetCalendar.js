@@ -1,45 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import TimesheetEntryModal from './TimesheetEntryModal';
 
+
 function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onReload }) {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [updatedData, setUpdatedData] = useState(timesheetData);
+
 
   // ✅ UPDATE LOCAL STATE WHEN PROPS CHANGE
   useEffect(() => {
     setUpdatedData(timesheetData);
   }, [timesheetData]);
 
+
   if (!timesheetData || timesheetData.length === 0) {
     return <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>No data available</div>;
   }
+
 
   // ✅ SAFE DATE CONVERSION
   const firstDateObj = typeof timesheetData[0].date === 'string'
     ? new Date(timesheetData[0].date + 'T00:00:00')
     : timesheetData[0].date;
 
+
   const startingDayOfWeek = firstDateObj.getDay();
+
 
   const emptyCells = Array(startingDayOfWeek).fill(null);
   const allCells = [...emptyCells, ...updatedData];
 
+
   // Handle modal save - update with API response
   const handleSaveEntry = async (data) => {
     console.log('Timesheet entry saved:', data);
+
 
     // ✅ SAFE DATE COMPARISON
     const savedDateObj = typeof data.date === 'string'
       ? new Date(data.date + 'T00:00:00')
       : data.date;
 
+
     const newUpdatedData = updatedData.map(day => {
       const dayDateObj = typeof day.date === 'string'
         ? new Date(day.date + 'T00:00:00')
         : day.date;
 
+
       const isSameDay = dayDateObj.toDateString() === savedDateObj.toDateString();
+
 
       if (isSameDay) {
         return {
@@ -57,14 +68,18 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
       return day;
     });
 
+
     setUpdatedData(newUpdatedData);
+
 
     // ✅ NOTIFY PARENT
     if (onDataUpdate) {
       onDataUpdate(newUpdatedData);
     }
 
+
     setShowEntryModal(false);
+
 
     // ✅ RELOAD FROM API AFTER SAVE
     if (onReload) {
@@ -72,9 +87,10 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     }
   };
 
+
   // Handle date click - WITH FUTURE DATE BLOCKING
   const handleDateClick = (dayData) => {
-    console.log('🖱️ Clicked date:', dayData?.day, 'isFuture:', dayData?.isFuture, 'isEditable:', dayData?.isEditable);
+    console.log('🖱️ Clicked date:', dayData?.day, 'isFuture:', dayData?.isFuture, 'isEditable:', dayData?.isEditable, 'hasApprovedUnlock:', dayData?.hasApprovedUnlock);
     
     // ✅ Can't edit past months
     if (!isCurrentMonth) {
@@ -82,17 +98,20 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
       return;
     }
 
+
     // ✅ Can't click on future dates
     if (dayData && dayData.isFuture) {
       console.log('❌ Future date - blocked');
       return;
     }
 
+
     // ✅ Can't click on weekends
     if (dayData && dayData.isWeekend) {
       console.log('❌ Weekend - blocked');
       return;
     }
+
 
     // ✅ Can only click on editable dates
     if (dayData && dayData.isEditable) {
@@ -107,6 +126,7 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     }
   };
 
+
   // Styles
   const calendarContainerStyle = {
     backgroundColor: 'white',
@@ -117,12 +137,14 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     opacity: isCurrentMonth ? 1 : 0.7,
   };
 
+
   const gridStyle = {
     display: 'grid',
     gridTemplateColumns: 'repeat(7, 1fr)',
     gap: '12px',
     marginBottom: '20px',
   };
+
 
   const weekdayHeaderStyle = {
     textAlign: 'center',
@@ -133,12 +155,14 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     borderBottom: '2px solid #e5e7eb',
   };
 
+
   const dayHeadersStyle = {
     display: 'grid',
     gridTemplateColumns: 'repeat(7, 1fr)',
     gap: '12px',
     marginBottom: '16px',
   };
+
 
   const getDayCellStyle = (dayData) => {
     if (!dayData) {
@@ -155,9 +179,11 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
       };
     }
 
+
     let bgColor = 'white';
     let borderColor = '#e5e7eb';
     let textColor = '#333';
+
 
     // ✅ ONLY SUNDAY IS WEEKEND (day 0)
     if (dayData.isWeekend) {
@@ -167,9 +193,14 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
       bgColor = '#DC2626';
       borderColor = '#991B1B';
       textColor = 'white';
-    } else if (dayData.is_locked || dayData.isLocked) {
+    } else if ((dayData.is_locked || dayData.isLocked) && !dayData.hasApprovedUnlock) {
+      // ✅ ONLY SHOW RED IF LOCKED AND NO APPROVED UNLOCK
       bgColor = '#FEE2E2';
       borderColor = '#FECACA';
+    } else if (dayData.hasApprovedUnlock && (dayData.status === 'pending' || !dayData.hoursLogged)) {
+      // ✅ APPROVED UNLOCK - SHOW AS PENDING (YELLOW) IF NOT FILLED YET
+      bgColor = '#FEF3C7';
+      borderColor = '#FCD34D';
     } else if (dayData.status === 'filled') {
       bgColor = '#D1FAE5';
       borderColor = '#6EE7B7';
@@ -184,6 +215,7 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
       bgColor = '#EFF6FF';
       borderColor = '#0284C7';
     }
+
 
     return {
       backgroundColor: bgColor,
@@ -204,11 +236,13 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     };
   };
 
+
   const dayNumberStyle = {
     fontSize: '18px',
     fontWeight: '600',
     marginBottom: '8px',
   };
+
 
   const hoursStyle = {
     fontSize: '14px',
@@ -217,6 +251,7 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     marginBottom: '4px',
   };
 
+
   const statusBadgeStyle = {
     fontSize: '11px',
     padding: '2px 6px',
@@ -224,12 +259,15 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     fontWeight: '500',
   };
 
+
   const getStatusBadgeStyle = (dayData) => {
     let bgColor = 'white';
     let textColor = '#666';
 
+
     const isAbsent = dayData.is_absent || dayData.isAbsent;
-    const isLocked = dayData.is_locked || dayData.isLocked;
+    const isLocked = (dayData.is_locked || dayData.isLocked) && !dayData.hasApprovedUnlock;
+
 
     if (isAbsent) {
       bgColor = 'rgba(255, 255, 255, 0.2)';
@@ -237,6 +275,10 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     } else if (isLocked) {
       bgColor = '#FECACA';
       textColor = '#991B1B';
+    } else if (dayData.hasApprovedUnlock && dayData.status !== 'filled') {
+      // ✅ APPROVED UNLOCK - SHOW AS EDITABLE/PENDING
+      bgColor = '#FCD34D';
+      textColor = '#92400E';
     } else if (dayData.status === 'filled') {
       bgColor = '#6EE7B7';
       textColor = '#065F46';
@@ -248,6 +290,7 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
       textColor = '#6B7280';
     }
 
+
     return {
       ...statusBadgeStyle,
       backgroundColor: bgColor,
@@ -255,9 +298,11 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     };
   };
 
+
   const getStatusText = (dayData) => {
     if (dayData.is_absent || dayData.isAbsent) return '❌ ABSENT';
-    if (dayData.is_locked || dayData.isLocked) return 'Locked';
+    if ((dayData.is_locked || dayData.isLocked) && !dayData.hasApprovedUnlock) return 'Locked';
+    if (dayData.hasApprovedUnlock && dayData.status !== 'filled') return 'Editable';  // ✅ SHOW EDITABLE FOR APPROVED UNLOCKS
     if (dayData.status === 'filled') return 'Filled';
     if (dayData.status === 'pending') return 'Pending';
     if (dayData.isFuture) return 'Future';
@@ -265,30 +310,26 @@ function TimesheetCalendar({ timesheetData, isCurrentMonth, onDataUpdate, onRelo
     return 'Editable';
   };
 
+
   // ✅ GET HOURS DISPLAY VALUE
-// ✅ FIXED VERSION
-const getHoursDisplay = (dayData) => {
-  if (dayData.is_absent || dayData.isAbsent) {
+  const getHoursDisplay = (dayData) => {
+    if (dayData.is_absent || dayData.isAbsent) {
+      return null;
+    }
+
+    // ✅ hoursLogged is ALREADY in hours (converted in formatApiDataForFrontend)
+    if (dayData.hoursLogged) {
+      return dayData.hoursLogged + 'h';
+    }
+
+    // ✅ If hours_logged exists (from API), it's in minutes - convert it
+    if (dayData.hours_logged) {
+      const converted = (dayData.hours_logged / 60).toFixed(1);
+      return converted + 'h';
+    }
+
     return null;
-  }
-
-  // ✅ hoursLogged is ALREADY in hours (converted in formatApiDataForFrontend)
-  if (dayData.hoursLogged) {
-    console.log('✅ Using hoursLogged:', dayData.hoursLogged);
-    return dayData.hoursLogged + 'h';
-  }
-
-  // ✅ If hours_logged exists (from API), it's in minutes - convert it
-  if (dayData.hours_logged) {
-    const converted = (dayData.hours_logged / 60).toFixed(1);
-    console.log('✅ Using hours_logged (converted):', converted);
-    return converted + 'h';
-  }
-
-  console.log('❌ No hours data found');
-  return null;
-};
-
+  };
 
 
   return (
@@ -302,6 +343,7 @@ const getHoursDisplay = (dayData) => {
             </div>
           ))}
         </div>
+
 
         {/* Calendar Grid */}
         <div style={gridStyle}>
@@ -339,6 +381,7 @@ const getHoursDisplay = (dayData) => {
           ))}
         </div>
 
+
         {/* Legend */}
         <div style={{ 
           display: 'grid', 
@@ -354,7 +397,7 @@ const getHoursDisplay = (dayData) => {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '20px', height: '20px', backgroundColor: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: '4px' }} />
-            <span style={{ fontSize: '14px', color: '#666' }}>Pending</span>
+            <span style={{ fontSize: '14px', color: '#666' }}>Pending / Editable</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '20px', height: '20px', backgroundColor: '#FEE2E2', border: '1px solid #FECACA', borderRadius: '4px' }} />
@@ -375,6 +418,7 @@ const getHoursDisplay = (dayData) => {
         </div>
       </div>
 
+
       {/* Modal */}
       <TimesheetEntryModal
         isOpen={showEntryModal}
@@ -385,5 +429,6 @@ const getHoursDisplay = (dayData) => {
     </>
   );
 }
+
 
 export default TimesheetCalendar;
