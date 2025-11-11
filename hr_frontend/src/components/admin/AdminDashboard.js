@@ -3,6 +3,8 @@ import axios from 'axios';
 import CreateUser from './CreateUser';
 import UnlockRequests from './UnlockRequests';
 import UserList from './UserList';
+import AutoMarkAbsent from './AutoMarkAbsent';  // ✅ ADD THIS IMPORT
+
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('users');
@@ -38,7 +40,7 @@ export default function AdminDashboard() {
           ⚙️ Admin Dashboard
         </h1>
         <p style={{ margin: '8px 0 0', fontSize: '14px', opacity: 0.9 }}>
-          Manage users and unlock requests
+          Manage users, unlock requests, and auto-mark absent
         </p>
       </div>
 
@@ -82,7 +84,8 @@ export default function AdminDashboard() {
         display: 'flex',
         gap: '12px',
         marginBottom: '24px',
-        borderBottom: '2px solid #e5e7eb'
+        borderBottom: '2px solid #e5e7eb',
+        flexWrap: 'wrap',  // ✅ ADD THIS FOR RESPONSIVE
       }}>
         <TabButton
           active={activeTab === 'users'}
@@ -102,6 +105,13 @@ export default function AdminDashboard() {
           icon="🔓"
           label="Unlock Requests"
         />
+        {/* ✅ ADD THIS NEW TAB */}
+        <TabButton
+          active={activeTab === 'auto-mark-absent'}
+          onClick={() => setActiveTab('auto-mark-absent')}
+          icon="❌"
+          label="Auto-Mark Absent"
+        />
       </div>
 
       {/* Content */}
@@ -109,12 +119,14 @@ export default function AdminDashboard() {
         {activeTab === 'users' && <UserList />}
         {activeTab === 'create-user' && <CreateUser onSuccess={fetchStats} />}
         {activeTab === 'unlock-requests' && <UnlockRequests onUpdate={fetchStats} />}
+        {/* ✅ ADD THIS NEW TAB CONTENT */}
+        {activeTab === 'auto-mark-absent' && <AutoMarkAbsent />}
       </div>
     </div>
   );
 }
 
-// Stats Card Component
+// Stats Card Component (unchanged)
 function StatCard({ title, value, icon, color }) {
   return (
     <div style={{
@@ -150,7 +162,7 @@ function StatCard({ title, value, icon, color }) {
   );
 }
 
-// Tab Button Component
+// Tab Button Component (unchanged)
 function TabButton({ active, onClick, icon, label }) {
   return (
     <button
