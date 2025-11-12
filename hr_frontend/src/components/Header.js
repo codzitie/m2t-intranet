@@ -5,9 +5,11 @@ import Notifications from './Notifications';
 
 function Header() {
   const { user, isAuthenticated, logout } = useUser();
-  
-  // ✅ CHECK IF USER IS ADMIN
-  const isAdmin = user && ['Admin', 'HR', 'CEO'].includes(user.role);
+
+  // Fallbacks for name/role to avoid undefined errors in the UI
+  const userName = user?.name || "No Name";
+  const userRole = user?.role || "No Role";
+  const isAdmin = userRole && ['Admin', 'HR', 'CEO'].includes(userRole);
 
   const headerStyle = {
     display: "flex",
@@ -36,7 +38,6 @@ function Header() {
     transition: "color 0.3s ease",
   };
 
-  // ✅ ADD ADMIN LINK STYLE
   const adminLinkStyle = {
     ...linkStyle,
     background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
@@ -78,8 +79,24 @@ function Header() {
         <Link to="/leave" style={linkStyle}>Leave Application & Approval</Link>
         <Link to="/policy" style={linkStyle}>HR Policy Repository</Link>
         <Link to="/security" style={linkStyle}>Security & Access</Link>
-        
-        {/* ✅ ADD ADMIN LINK - Only visible to Admin/HR/CEO */}
+
+        {userRole === 'CEO' && (
+          <Link 
+            to="/dashboard/ceo" 
+            style={{
+              ...linkStyle,
+              background: "linear-gradient(135deg, #6b7280, #374151)",
+              padding: "8px 16px",
+              borderRadius: "6px",
+              fontWeight: "700",
+              boxShadow: "0 2px 8px rgba(77, 82, 89, 0.5)",
+              marginLeft: "10px"
+            }}
+          >
+            🏛️ CEO Dashboard
+          </Link>
+        )}
+
         {isAdmin && (
           <Link 
             to="/admin" 
@@ -96,13 +113,13 @@ function Header() {
             ⚙️ Admin Panel
           </Link>
         )}
-        
+
         {/* User Info Section */}
         {isAuthenticated && user && (
           <div style={userInfoStyle}>
             <Notifications />
             <span style={userNameStyle}>
-              👤 {user.name} ({user.role})
+              👤 {userName} ({userRole})
             </span>
             <button 
               style={logoutButtonStyle}

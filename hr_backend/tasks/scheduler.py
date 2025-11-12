@@ -306,8 +306,8 @@ def start_scheduler():
         scheduler.add_job(
             func=auto_lock_pending_entries,
             trigger='cron',
-            hour=0,        # 11:38 PM
-            minute=1,
+            hour=11,        # 11:38 PM
+            minute=12,
             id='auto_lock_pending_entries',
             replace_existing=True,
             max_instances=1,
@@ -318,8 +318,8 @@ def start_scheduler():
         scheduler.add_job(
             func=auto_mark_absent_for_locked_entries,
             trigger='cron',
-            hour=0,        # 11:39 PM
-            minute=2,      # 1 minute after auto-lock
+            hour=11,        # 11:39 PM
+            minute=13,      # 1 minute after auto-lock
             id='auto_mark_absent',
             replace_existing=True,
             max_instances=1,

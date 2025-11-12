@@ -6,6 +6,7 @@ import ApplyLeaveForm from './ApplyLeaveForm';
 import LeaveHistory from './LeaveHistory';
 import SupervisorDashboard from './SupervisorDashboard';
 import HRDashboard from './HRDashboard';
+import CEODashboard from './CEODashboard';
 
 function LeaveDashboard() {
   const { user } = useUser();
@@ -18,6 +19,9 @@ function LeaveDashboard() {
   const [showSupervisorView, setShowSupervisorView] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [error, setError] = useState('');
+
+  // Use safe default for permissions
+  const permissions = user?.permissions || [];
 
   useEffect(() => {
     if (user) {
@@ -36,22 +40,23 @@ function LeaveDashboard() {
         api.getLeaveHistory(),
       ];
 
-      // If user has supervisor permissions, also fetch pending approvals
-      if (user.permissions.includes('approve_team_leaves')) {
-        requests.push(api.getPendingApprovals());
+      if (permissions.includes('approve_team_leaves')) {
+        if (user.role === 'CEO') {
+          requests.push(api.getPendingL2Approvals());
+        } else {
+          requests.push(api.getPendingL1Approvals());
+        }
       }
 
       const responses = await Promise.all(requests);
 
-      // Handle leave balance
       setLeaveBalance(responses[0] || []);
-
-      // Handle leave history
       setRecentLeaves((responses[1] || []).slice(0, 3));
 
-      // Handle pending approvals
       if (responses[2]) {
         setPendingApprovalsCount(responses[2].length);
+      } else {
+        setPendingApprovalsCount(0);
       }
     } catch (error) {
       console.error('Error loading leave data:', error);
@@ -79,7 +84,6 @@ function LeaveDashboard() {
     return <span style={statusStyles[status]}>{status}</span>;
   };
 
-  // Styles
   const containerStyle = {
     maxWidth: '1200px',
     margin: '0 auto',
@@ -102,141 +106,6 @@ function LeaveDashboard() {
     color: '#666',
   };
 
-  const balanceGridStyle = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '20px',
-    marginBottom: '40px',
-  };
-
-  const balanceCardStyle = {
-    backgroundColor: 'white',
-    border: '1px solid #e5e7eb',
-    borderRadius: '8px',
-    padding: '24px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-  };
-
-  const leaveTypeStyle = {
-    fontSize: '14px',
-    color: '#666',
-    marginBottom: '12px',
-    fontWeight: '500',
-  };
-
-  const leaveCountStyle = {
-    fontSize: '36px',
-    fontWeight: 'bold',
-    color: '#004aad',
-    marginBottom: '8px',
-  };
-
-  const leaveDetailsStyle = {
-    fontSize: '14px',
-    color: '#888',
-  };
-
-  const progressBarContainerStyle = {
-    width: '100%',
-    height: '8px',
-    backgroundColor: '#e5e7eb',
-    borderRadius: '4px',
-    marginTop: '12px',
-    overflow: 'hidden',
-  };
-
-  const getProgressBarStyle = (used, total) => ({
-    width: `${(used / total) * 100}%`,
-    height: '100%',
-    backgroundColor: used / total > 0.7 ? '#EF4444' : used / total > 0.5 ? '#F59E0B' : '#10B981',
-    transition: 'width 0.3s ease',
-  });
-
-  const quickActionsStyle = {
-    display: 'flex',
-    gap: '15px',
-    marginBottom: '40px',
-    flexWrap: 'wrap',
-  };
-
-  const buttonStyle = {
-    padding: '12px 24px',
-    fontSize: '16px',
-    fontWeight: '500',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-  };
-
-  const primaryButtonStyle = {
-    ...buttonStyle,
-    backgroundColor: '#004aad',
-    color: 'white',
-  };
-
-  const secondaryButtonStyle = {
-    ...buttonStyle,
-    backgroundColor: 'white',
-    color: '#004aad',
-    border: '1px solid #004aad',
-  };
-
-  const recentActivityStyle = {
-    backgroundColor: 'white',
-    border: '1px solid #e5e7eb',
-    borderRadius: '8px',
-    padding: '24px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-  };
-
-  const sectionTitleStyle = {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#004aad',
-    marginBottom: '20px',
-  };
-
-  const leaveItemStyle = {
-    padding: '16px',
-    backgroundColor: '#f9fafb',
-    borderRadius: '6px',
-    marginBottom: '12px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '12px',
-  };
-
-  const leaveInfoStyle = {
-    flex: 1,
-    minWidth: '200px',
-  };
-
-  const leaveTitleStyle = {
-    fontSize: '16px',
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: '4px',
-  };
-
-  const leaveDateStyle = {
-    fontSize: '14px',
-    color: '#666',
-  };
-
-  const errorStyle = {
-    backgroundColor: '#FEE2E2',
-    border: '1px solid #FECACA',
-    color: '#991B1B',
-    padding: '12px',
-    borderRadius: '6px',
-    marginBottom: '20px',
-  };
-
-  // Check if user is loaded from context
   if (!user) {
     return (
       <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>
@@ -253,10 +122,28 @@ function LeaveDashboard() {
     );
   }
 
+  // Show CEO Dashboard if user is CEO
+  if (user.role === 'CEO') {
+    return <CEODashboard />;
+  }
+
   return (
     <div style={containerStyle}>
       {/* Error Message */}
-      {error && <div style={errorStyle}>{error}</div>}
+      {error && (
+        <div
+          style={{
+            backgroundColor: '#FEE2E2',
+            border: '1px solid #FECACA',
+            color: '#991B1B',
+            padding: '12px',
+            borderRadius: '6px',
+            marginBottom: '20px',
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       {/* Header Section */}
       <div style={headerStyle}>
@@ -265,11 +152,25 @@ function LeaveDashboard() {
       </div>
 
       {/* Leave Balance Cards */}
-      <div style={balanceGridStyle}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+          gap: '20px',
+          marginBottom: '40px',
+        }}
+      >
         {leaveBalance.map((leave) => (
           <div
             key={leave.leave_type_id}
-            style={balanceCardStyle}
+            style={{
+              backgroundColor: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '24px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+            }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
               e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
@@ -279,22 +180,55 @@ function LeaveDashboard() {
               e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
             }}
           >
-            <div style={leaveTypeStyle}>{leave.leave_type}</div>
-            <div style={leaveCountStyle}>{leave.remaining}</div>
-            <div style={leaveDetailsStyle}>
+            <div style={{ fontSize: '14px', color: '#666', marginBottom: '12px', fontWeight: '500' }}>{leave.leave_type}</div>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#004aad', marginBottom: '8px' }}>{leave.remaining}</div>
+            <div style={{ fontSize: '14px', color: '#888' }}>
               Available • Used: {leave.used}/{leave.total}
             </div>
-            <div style={progressBarContainerStyle}>
-              <div style={getProgressBarStyle(leave.used, leave.total)} />
+            <div
+              style={{
+                width: '100%',
+                height: '8px',
+                backgroundColor: '#e5e7eb',
+                borderRadius: '4px',
+                marginTop: '12px',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${(leave.used / leave.total) * 100}%`,
+                  height: '100%',
+                  backgroundColor: leave.used / leave.total > 0.7 ? '#EF4444' : leave.used / leave.total > 0.5 ? '#F59E0B' : '#10B981',
+                  transition: 'width 0.3s ease',
+                }}
+              />
             </div>
           </div>
         ))}
       </div>
 
       {/* Quick Actions */}
-      <div style={quickActionsStyle}>
+      <div
+        style={{
+          display: 'flex',
+          gap: '15px',
+          marginBottom: '40px',
+          flexWrap: 'wrap',
+        }}
+      >
         <button
-          style={primaryButtonStyle}
+          style={{
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: '500',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.3s ease',
+            backgroundColor: '#004aad',
+            color: 'white',
+          }}
           onClick={() => setShowApplyForm(true)}
           onMouseEnter={(e) => {
             e.target.style.backgroundColor = '#003380';
@@ -307,7 +241,17 @@ function LeaveDashboard() {
         </button>
 
         <button
-          style={secondaryButtonStyle}
+          style={{
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: '500',
+            border: '1px solid #004aad',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.3s ease',
+            backgroundColor: 'white',
+            color: '#004aad',
+          }}
           onClick={() => setShowLeaveHistory(true)}
           onMouseEnter={(e) => {
             e.target.style.backgroundColor = '#f0f4ff';
@@ -319,13 +263,17 @@ function LeaveDashboard() {
           View Leave History
         </button>
 
-        {/* Calendar Button - Only for Supervisor and HR */}
-        {(user.permissions.includes('approve_team_leaves') || user.permissions.includes('manage_hr')) && (
+        {(permissions.includes('approve_team_leaves') || permissions.includes('manage_hr')) && (
           <button
             style={{
-              ...secondaryButtonStyle,
-              borderColor: '#10B981',
-              color: '#10B981'
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: '500',
+              border: '1px solid #10B981',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              color: '#10B981',
+              backgroundColor: 'white',
             }}
             onClick={() => navigate('/leave/calendar')}
             onMouseEnter={(e) => {
@@ -340,54 +288,62 @@ function LeaveDashboard() {
         )}
       </div>
 
-      {/* Supervisor/HR Section */}
-      {(user.permissions.includes('approve_team_leaves') || user.permissions.includes('manage_hr')) && (
+      {(permissions.includes('approve_team_leaves') || permissions.includes('manage_hr')) && (
         <>
-          <div style={{ 
-            height: '2px', 
-            backgroundColor: '#e5e7eb', 
-            margin: '40px 0',
-            position: 'relative'
-          }}>
-            <div style={{
-              position: 'absolute',
-              top: '-12px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              backgroundColor: 'white',
-              padding: '0 16px',
-              color: '#888',
-              fontSize: '14px',
-              fontWeight: '500'
-            }}>
-              {user.permissions.includes('manage_hr') ? 'HR Management' : 'Team Management'}
+          <div
+            style={{
+              height: '2px',
+              backgroundColor: '#e5e7eb',
+              margin: '40px 0',
+              position: 'relative',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                top: '-12px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                backgroundColor: 'white',
+                padding: '0 16px',
+                color: '#888',
+                fontSize: '14px',
+                fontWeight: '500',
+              }}
+            >
+              {permissions.includes('manage_hr') ? 'HR Management' : 'Team Management'}
             </div>
           </div>
 
-          {/* HR View Button */}
-          {user.permissions.includes('manage_hr') && (
-            <div style={{
-              backgroundColor: 'white',
-              border: '2px solid #10B981',
-              borderRadius: '8px',
-              padding: '24px',
-              marginBottom: '20px',
-              boxShadow: '0 2px 8px rgba(16,185,129,0.1)',
-            }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px',
-              }}>
+          {permissions.includes('manage_hr') && (
+            <div
+              style={{
+                backgroundColor: 'white',
+                border: '2px solid #10B981',
+                borderRadius: '8px',
+                padding: '24px',
+                marginBottom: '20px',
+                boxShadow: '0 2px 8px rgba(16,185,129,0.1)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
                 <div>
-                  <h3 style={{
-                    fontSize: '20px',
-                    fontWeight: '600',
-                    color: '#10B981',
-                    marginBottom: '4px',
-                  }}>
+                  <h3
+                    style={{
+                      fontSize: '20px',
+                      fontWeight: '600',
+                      color: '#10B981',
+                      marginBottom: '4px',
+                    }}
+                  >
                     👔 HR Dashboard
                   </h3>
                   <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
@@ -419,43 +375,50 @@ function LeaveDashboard() {
             </div>
           )}
 
-          {/* Supervisor Approvals Button */}
-          {user.permissions.includes('approve_team_leaves') && !user.permissions.includes('manage_hr') && (
-            <div style={{
-              backgroundColor: 'white',
-              border: '2px solid #004aad',
-              borderRadius: '8px',
-              padding: '24px',
-              marginBottom: '40px',
-              boxShadow: '0 2px 8px rgba(0,74,173,0.1)',
-            }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '16px',
-                flexWrap: 'wrap',
-                gap: '12px',
-              }}>
+          {permissions.includes('approve_team_leaves') && !permissions.includes('manage_hr') && (
+            <div
+              style={{
+                backgroundColor: 'white',
+                border: '2px solid #004aad',
+                borderRadius: '8px',
+                padding: '24px',
+                marginBottom: '40px',
+                boxShadow: '0 2px 8px rgba(0,74,173,0.1)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '16px',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
                 <div>
-                  <h3 style={{
-                    fontSize: '20px',
-                    fontWeight: '600',
-                    color: '#004aad',
-                    marginBottom: '4px',
-                  }}>
+                  <h3
+                    style={{
+                      fontSize: '20px',
+                      fontWeight: '600',
+                      color: '#004aad',
+                      marginBottom: '4px',
+                    }}
+                  >
                     Pending Team Approvals
                     {pendingApprovalsCount > 0 && (
-                      <span style={{
-                        display: 'inline-block',
-                        backgroundColor: '#EF4444',
-                        color: 'white',
-                        padding: '4px 12px',
-                        borderRadius: '12px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        marginLeft: '12px',
-                      }}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          backgroundColor: '#EF4444',
+                          color: 'white',
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          marginLeft: '12px',
+                        }}
+                      >
                         {pendingApprovalsCount}
                       </span>
                     )}
@@ -488,13 +451,15 @@ function LeaveDashboard() {
               </div>
 
               {pendingApprovalsCount === 0 && !showSupervisorView && (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '20px',
-                  backgroundColor: '#f0f9ff',
-                  borderRadius: '6px',
-                  color: '#0369a1',
-                }}>
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: '20px',
+                    backgroundColor: '#f0f9ff',
+                    borderRadius: '6px',
+                    color: '#0369a1',
+                  }}
+                >
                   ✅ All caught up! No pending approvals at the moment.
                 </div>
               )}
@@ -503,9 +468,8 @@ function LeaveDashboard() {
         </>
       )}
 
-      {/* Show Supervisor/HR View or Regular Dashboard */}
       {showSupervisorView ? (
-        user.permissions.includes('manage_hr') ? (
+        permissions.includes('manage_hr') ? (
           <HRDashboard />
         ) : (
           <SupervisorDashboard onApprovalComplete={loadLeaveBalance} />
@@ -513,9 +477,18 @@ function LeaveDashboard() {
       ) : (
         <>
           {/* Recent Activity Section */}
-          <div style={recentActivityStyle}>
-            <h3 style={sectionTitleStyle}>Recent Activity</h3>
-            
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              padding: '24px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              marginBottom: '40px',
+            }}
+          >
+            <h3 style={{ fontSize: '20px', color: '#004aad', fontWeight: '600', marginBottom: '20px' }}>
+              Recent Activity
+            </h3>
             {recentLeaves.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: '#9CA3AF' }}>
                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>📋</div>
@@ -525,21 +498,38 @@ function LeaveDashboard() {
             ) : (
               <>
                 {recentLeaves.map((leave) => (
-                  <div key={leave.id} style={leaveItemStyle}>
-                    <div style={leaveInfoStyle}>
-                      <div style={leaveTitleStyle}>
+                  <div
+                    key={leave.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      padding: '16px',
+                      backgroundColor: '#f9fafb',
+                      borderRadius: '6px',
+                      marginBottom: '12px',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: '200px' }}>
+                      <div
+                        style={{
+                          fontSize: '16px',
+                          fontWeight: '500',
+                          color: '#333',
+                          marginBottom: '4px',
+                        }}
+                      >
                         {leave.leave_type} • {leave.days} {leave.days === 1 ? 'day' : 'days'}
                       </div>
-                      <div style={leaveDateStyle}>
+                      <div style={{ fontSize: '14px', color: '#666' }}>
                         {leave.start_date} to {leave.end_date}
                       </div>
                     </div>
-                    <div>
-                      {getStatusBadge(leave.status)}
-                    </div>
+                    <div>{getStatusBadge(leave.status)}</div>
                   </div>
                 ))}
-                
+
                 {recentLeaves.length >= 3 && (
                   <button
                     onClick={() => setShowLeaveHistory(true)}
@@ -565,20 +555,9 @@ function LeaveDashboard() {
         </>
       )}
 
-      {/* Apply Leave Form Modal */}
-      {showApplyForm && (
-        <ApplyLeaveForm
-          onClose={() => setShowApplyForm(false)}
-          onSuccess={loadLeaveBalance}
-        />
-      )}
+      {showApplyForm && <ApplyLeaveForm onClose={() => setShowApplyForm(false)} onSuccess={loadLeaveBalance} />}
 
-      {/* Leave History Modal */}
-      {showLeaveHistory && (
-        <LeaveHistory
-          onClose={() => setShowLeaveHistory(false)}
-        />
-      )}
+      {showLeaveHistory && <LeaveHistory onClose={() => setShowLeaveHistory(false)} />}
     </div>
   );
 }

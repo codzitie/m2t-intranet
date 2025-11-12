@@ -5,10 +5,12 @@ from datetime import datetime
 import uuid
 from config import settings
 
+
 # Database connection
 engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
 
 # Dependency to get database session
 def get_db():
@@ -18,7 +20,9 @@ def get_db():
     finally:
         db.close()
 
+
 # Database Models
+
 
 class User(Base):
     __tablename__ = "users"
@@ -27,7 +31,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(String, nullable=False)  # Employee, Supervisor, HR
+    role = Column(String, nullable=False)  # Employee, Supervisor, HR, CEO
     department = Column(String)
     designation = Column(String)
     supervisor_id = Column(String, ForeignKey("users.id"), nullable=True)
@@ -43,6 +47,7 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user")
 
 
+
 class LeaveType(Base):
     __tablename__ = "leave_types"
     
@@ -55,6 +60,7 @@ class LeaveType(Base):
     # Relationships
     leave_balances = relationship("LeaveBalance", back_populates="leave_type")
     leave_applications = relationship("LeaveApplication", back_populates="leave_type")
+
 
 
 class LeaveBalance(Base):
@@ -73,6 +79,7 @@ class LeaveBalance(Base):
     leave_type = relationship("LeaveType", back_populates="leave_balances")
 
 
+
 class LeaveApplication(Base):
     __tablename__ = "leave_applications"
     
@@ -83,16 +90,29 @@ class LeaveApplication(Base):
     end_date = Column(Date, nullable=False)
     days = Column(Integer, nullable=False)
     reason = Column(Text)
-    status = Column(String, default="Pending")  # Pending, Approved, Rejected
+    status = Column(String, default="Pending")  # Pending, L1-Approved, Approved, Rejected
     supervisor_remarks = Column(Text)
     applied_on = Column(DateTime, default=datetime.utcnow)
     approved_on = Column(DateTime, nullable=True)
     approved_by = Column(String, ForeignKey("users.id"), nullable=True)
     
+    # ========== TWO-LEVEL APPROVAL FIELDS ==========
+    l1_status = Column(String, default="Pending")  # Pending, Approved, Rejected
+    l1_approved_by = Column(String, ForeignKey("users.id"), nullable=True)
+    l1_approved_on = Column(DateTime, nullable=True)
+    l1_remarks = Column(Text, nullable=True)
+    
+    l2_status = Column(String, default="Pending")  # Pending, Approved, Rejected
+    l2_approved_by = Column(String, ForeignKey("users.id"), nullable=True)
+    l2_approved_on = Column(DateTime, nullable=True)
+    l2_remarks = Column(Text, nullable=True)
+    # ==============================================
+    
     # Relationships
     user = relationship("User", foreign_keys=[user_id], back_populates="leave_applications")
     leave_type = relationship("LeaveType", back_populates="leave_applications")
     approver = relationship("User", foreign_keys=[approved_by])
+
 
 
 class Notification(Base):
@@ -109,7 +129,9 @@ class Notification(Base):
     # Relationships
     user = relationship("User", back_populates="notifications")
 
+
 # =============== TIMESHEET MODELS ===============
+
 
 class TimesheetEntry(Base):
     __tablename__ = "timesheet_entries"
@@ -134,6 +156,7 @@ class TimesheetEntry(Base):
     locker = relationship("User", foreign_keys=[locked_by])
 
 
+
 class TimesheetActivity(Base):
     __tablename__ = "timesheet_activities"
     
@@ -150,6 +173,7 @@ class TimesheetActivity(Base):
     timesheet = relationship("TimesheetEntry", backref="activities")
 
 
+
 class TimesheetLockPolicy(Base):
     __tablename__ = "timesheet_lock_policies"
     
@@ -159,6 +183,7 @@ class TimesheetLockPolicy(Base):
     lock_time = Column(String, default="23:59")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 
 class TimesheetUnlockRequest(Base):
@@ -180,6 +205,7 @@ class TimesheetUnlockRequest(Base):
     timesheet = relationship("TimesheetEntry")
     requester = relationship("User", foreign_keys=[user_id])
     approver = relationship("User", foreign_keys=[approved_by])
+
 
 # Create all tables
 def init_db():

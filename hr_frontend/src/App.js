@@ -10,7 +10,7 @@ import LoginPage from './components/LoginPage';
 import RoleSwitcher from "./components/RoleSwitcher";
 import TimesheetDashboard from "./components/timesheet/TimesheetDashboard";
 import AdminDashboard from "./components/admin/AdminDashboard"; // ✅ ADD THIS
-
+import CEODashboard from "./components/CEODashboard"; // ✅ ADD THIS
 function PlaceholderPage({ title }) {
   return (
     <div style={{ textAlign: "center", padding: "80px", fontSize: "22px" }}>
@@ -122,6 +122,15 @@ function AppRoutes() {
             </ProtectedRoute>
           } 
         />
+
+        <Route 
+  path="/dashboard/ceo" 
+  element={
+    <AdminRoute>
+      <CEODashboard />
+    </AdminRoute>
+  } 
+/>
         
         <Route 
           path="/security" 

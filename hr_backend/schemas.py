@@ -3,12 +3,15 @@ from typing import Optional, List
 from datetime import date, datetime
 
 
+
 # ============= AUTH SCHEMAS =============
+
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
+
 
 
 class RegisterRequest(BaseModel):
@@ -21,13 +24,16 @@ class RegisterRequest(BaseModel):
     supervisor_id: Optional[str] = None
 
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: "UserResponse"
 
 
+
 # ============= USER SCHEMAS =============
+
 
 
 class UserResponse(BaseModel):
@@ -44,7 +50,9 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+
 # ============= LEAVE TYPE SCHEMAS =============
+
 
 
 class LeaveTypeResponse(BaseModel):
@@ -57,7 +65,9 @@ class LeaveTypeResponse(BaseModel):
         from_attributes = True
 
 
+
 # ============= LEAVE BALANCE SCHEMAS =============
+
 
 
 class LeaveBalanceResponse(BaseModel):
@@ -71,7 +81,9 @@ class LeaveBalanceResponse(BaseModel):
         from_attributes = True
 
 
+
 # ============= LEAVE APPLICATION SCHEMAS =============
+
 
 
 class ApplyLeaveRequest(BaseModel):
@@ -79,6 +91,7 @@ class ApplyLeaveRequest(BaseModel):
     start_date: date
     end_date: date
     reason: str = Field(..., min_length=5, max_length=500)
+
 
 
 class LeaveApplicationResponse(BaseModel):
@@ -96,15 +109,32 @@ class LeaveApplicationResponse(BaseModel):
     applied_on: datetime
     approved_on: Optional[datetime]
     
+    # ========== TWO-LEVEL APPROVAL FIELDS ==========
+    l1_status: Optional[str] = "Pending"
+    l1_approved_by: Optional[str] = None
+    l1_approved_by_name: Optional[str] = None
+    l1_approved_on: Optional[datetime] = None
+    l1_remarks: Optional[str] = None
+    
+    l2_status: Optional[str] = "Pending"
+    l2_approved_by: Optional[str] = None
+    l2_approved_by_name: Optional[str] = None
+    l2_approved_on: Optional[datetime] = None
+    l2_remarks: Optional[str] = None
+    # ==============================================
+    
     class Config:
         from_attributes = True
+
 
 
 class ApproveRejectRequest(BaseModel):
     remarks: str = Field(..., min_length=5, max_length=500)
 
 
+
 # ============= NOTIFICATION SCHEMAS =============
+
 
 
 class NotificationResponse(BaseModel):
@@ -119,18 +149,22 @@ class NotificationResponse(BaseModel):
         from_attributes = True
 
 
+
 class NotificationsSummary(BaseModel):
     unread_count: int
     notifications: List[NotificationResponse]
 
 
+
 # ============= HR DASHBOARD SCHEMAS =============
+
 
 
 class DepartmentStats(BaseModel):
     department: str
     total_employees: int
     pending_approvals: int
+
 
 
 class HRStatistics(BaseModel):
@@ -144,6 +178,7 @@ class HRStatistics(BaseModel):
     department_stats: List[DepartmentStats]
 
 
+
 class EmployeeBalanceResponse(BaseModel):
     employee_id: str
     employee_name: str
@@ -154,7 +189,31 @@ class EmployeeBalanceResponse(BaseModel):
     earned: dict
 
 
-# =============== TIMESHEET SCHEMAS ✅ NEW ===============
+
+# ============= CEO DASHBOARD SCHEMAS (NEW) =============
+
+
+
+class CEOApprovalStats(BaseModel):
+    """CEO-specific approval statistics"""
+    pending_l2_approvals: int
+    total_l1_approved: int
+    total_final_approved: int
+    rejected_by_ceo: int
+
+
+
+class CEODashboardResponse(BaseModel):
+    """CEO dashboard overview"""
+    stats: CEOApprovalStats
+    pending_l2_leaves: List[LeaveApplicationResponse]
+    recent_approvals: List[LeaveApplicationResponse]
+
+
+
+# =============== TIMESHEET SCHEMAS ===============
+
+
 
 class TimesheetActivitySchema(BaseModel):
     """Schema for timesheet activity"""
@@ -165,6 +224,7 @@ class TimesheetActivitySchema(BaseModel):
     end_time: str
 
 
+
 class TimesheetEntryCreateSchema(BaseModel):
     """Schema for creating timesheet entry"""
     date: str
@@ -172,6 +232,7 @@ class TimesheetEntryCreateSchema(BaseModel):
     end_time: str
     description: str
     activities: Optional[List[TimesheetActivitySchema]] = []
+
 
 
 class TimesheetEntryResponseSchema(BaseModel):
@@ -194,6 +255,7 @@ class TimesheetEntryResponseSchema(BaseModel):
         from_attributes = True
 
 
+
 class TimesheetStatsSchema(BaseModel):
     """Schema for timesheet statistics"""
     filled_days: int
@@ -204,11 +266,13 @@ class TimesheetStatsSchema(BaseModel):
     total_hours: float
 
 
+
 class UnlockRequestCreateSchema(BaseModel):
     """Schema for creating unlock request"""
     timesheet_id: str
     date: str
     reason: str
+
 
 
 class UnlockRequestResponseSchema(BaseModel):
@@ -226,10 +290,12 @@ class UnlockRequestResponseSchema(BaseModel):
         from_attributes = True
 
 
+
 class UnlockRequestApproveSchema(BaseModel):
     """Schema for approving/rejecting unlock request"""
     status: str  # "approved" or "rejected"
     remarks: Optional[str] = None
+
 
 
 class HRTimesheetDashboardSchema(BaseModel):
@@ -240,6 +306,7 @@ class HRTimesheetDashboardSchema(BaseModel):
     today_absent: int
     pending_unlocks: int
     month_summary: dict
+
 
 
 class TimesheetEmployeeResponseSchema(BaseModel):
