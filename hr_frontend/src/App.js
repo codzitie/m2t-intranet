@@ -9,8 +9,10 @@ import LeaveCalendar from "./components/LeaveCalendar";
 import LoginPage from './components/LoginPage';
 import RoleSwitcher from "./components/RoleSwitcher";
 import TimesheetDashboard from "./components/timesheet/TimesheetDashboard";
-import AdminDashboard from "./components/admin/AdminDashboard"; // ✅ ADD THIS
-import CEODashboard from "./components/CEODashboard"; // ✅ ADD THIS
+import AdminDashboard from "./components/admin/AdminDashboard"; 
+import CEODashboard from "./components/CEODashboard"; 
+import ForgotPassword from './components/ForgotPassword'; 
+
 function PlaceholderPage({ title }) {
   return (
     <div style={{ textAlign: "center", padding: "80px", fontSize: "22px" }}>
@@ -104,6 +106,8 @@ function AppRoutes() {
             </ProtectedRoute>
           } 
         />
+
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         
         <Route 
           path="/attendance" 

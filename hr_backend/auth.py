@@ -10,7 +10,7 @@ from config import settings
 import random
 import string
 from email_service import send_otp_email
-
+from email_service import send_password_reset_otp
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -232,3 +232,126 @@ def resend_otp(resend_data: dict, db: Session = Depends(get_db)):
     send_otp_email(user.email, otp, user.name)
     
     return {"message": "New OTP sent to your email", "email": user.email}
+
+
+
+
+# ============= FORGOT PASSWORD ENDPOINTS =============
+
+@router.post("/forgot-password")
+def forgot_password(request_data: dict, db: Session = Depends(get_db)):
+    """
+    STEP 1: Request password reset - Sends OTP to email
+    """
+    email = request_data.get("email", "").lower().strip()
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # ✅ Don't reveal if email exists (security best practice)
+        return {
+            "message": "If this email exists, you will receive a password reset code",
+            "email": email
+        }
+    
+    # Generate OTP for password reset
+    otp = generate_otp()
+    user.two_fa_code = otp
+    user.two_fa_code_expires = datetime.utcnow() + timedelta(minutes=10)  # 10 min expiry
+    db.commit()
+    
+    # Send password reset OTP email
+    send_password_reset_otp(user.email, otp, user.name)
+    
+    return {
+        "message": "Password reset code sent to your email",
+        "email": user.email
+    }
+
+
+@router.post("/verify-reset-otp")
+def verify_reset_otp(verify_data: dict, db: Session = Depends(get_db)):
+    """
+    STEP 2: Verify OTP for password reset
+    """
+    email = verify_data.get("email", "").lower().strip()
+    otp = verify_data.get("otp", "").strip()
+    
+    if not email or not otp:
+        raise HTTPException(status_code=400, detail="Email and OTP are required")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    if not user.two_fa_code:
+        raise HTTPException(status_code=400, detail="No OTP found. Please request a new one.")
+    
+    if datetime.utcnow() > user.two_fa_code_expires:
+        user.two_fa_code = None
+        user.two_fa_code_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")
+    
+    if user.two_fa_code != otp:
+        raise HTTPException(status_code=401, detail="Invalid OTP code")
+    
+    # ✅ OTP verified - allow password reset
+    return {
+        "message": "OTP verified successfully. You can now reset your password.",
+        "email": user.email,
+        "verified": True
+    }
+
+
+@router.post("/reset-password")
+def reset_password(reset_data: dict, db: Session = Depends(get_db)):
+    """
+    STEP 3: Reset password after OTP verification
+    """
+    email = reset_data.get("email", "").lower().strip()
+    otp = reset_data.get("otp", "").strip()
+    new_password = reset_data.get("new_password", "")
+    
+    if not email or not otp or not new_password:
+        raise HTTPException(
+            status_code=400, 
+            detail="Email, OTP, and new password are required"
+        )
+    
+    # Validate password strength
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=400, 
+            detail="Password must be at least 8 characters long"
+        )
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    # Verify OTP one more time
+    if not user.two_fa_code or user.two_fa_code != otp:
+        raise HTTPException(status_code=401, detail="Invalid or expired OTP")
+    
+    if datetime.utcnow() > user.two_fa_code_expires:
+        user.two_fa_code = None
+        user.two_fa_code_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="OTP expired. Please start over.")
+    
+    # ✅ Update password
+    user.password_hash = hash_password(new_password)
+    
+    # Clear OTP after successful reset
+    user.two_fa_code = None
+    user.two_fa_code_expires = None
+    
+    db.commit()
+    
+    return {
+        "message": "Password reset successful. You can now login with your new password.",
+        "email": user.email
+    }

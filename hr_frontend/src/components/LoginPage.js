@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useUser } from '../context/UserContext';
 
 const API_URL = 'http://localhost:8000/api/auth';
 
 export default function LoginPage() {
-  const navigate = useNavigate();
   const { login, isAuthenticated } = useUser();
-  
+
+  // Login
   const [email, setEmail] = useState('dharun@m2t-ai.com');
   const [password, setPassword] = useState('password123');
   const [showOtpInput, setShowOtpInput] = useState(false);
@@ -19,13 +18,48 @@ export default function LoginPage() {
   const [otpTimer, setOtpTimer] = useState(300);
   const [canResend, setCanResend] = useState(false);
 
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/leave', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
+  // Forgot password
+  const [showForgot, setShowForgot] = useState(false);
+  const [fpStep, setFpStep] = useState(1);
+  const [fpEmail, setFpEmail] = useState('');
+  const [fpOtp, setFpOtp] = useState('');
+  const [fpNewPwd, setFpNewPwd] = useState('');
+  const [fpConfirmPwd, setFpConfirmPwd] = useState('');
+  const [fpLoading, setFpLoading] = useState(false);
+  const [fpError, setFpError] = useState('');
+  const [fpSuccess, setFpSuccess] = useState('');
+  const [fpOtpTimer, setFpOtpTimer] = useState(300);
+  const [fpCanResend, setFpCanResend] = useState(false);
 
+  useEffect(() => {
+    if (isAuthenticated) window.location = '/leave';
+  }, [isAuthenticated]);
+
+  // OTP Login timers
+  const startOtpTimer = () => {
+    setOtpTimer(300);
+    setCanResend(false);
+    const interval = setInterval(() => {
+      setOtpTimer((prev) => {
+        if (prev <= 1) { clearInterval(interval); setCanResend(true); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+  // Forgot password OTP timer
+  useEffect(() => {
+    if (showForgot && fpStep === 2 && fpOtpTimer > 0) {
+      const timer = setInterval(() => {
+        setFpOtpTimer(prev => {
+          if (prev <= 1) { clearInterval(timer); setFpCanResend(true); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [showForgot, fpStep, fpOtpTimer]);
+
+  // Login handlers
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -33,11 +67,14 @@ export default function LoginPage() {
     try {
       const response = await axios.post(`${API_URL}/login-otp`, {
         email: email.trim(),
-        password: password
+        password
       });
       if (response.data.requires_otp) {
         setOtpEmail(response.data.email);
         setShowOtpInput(true);
+        setOtp(['', '', '', '', '', '']);
+        setOtpTimer(300);
+        setCanResend(false);
         startOtpTimer();
       }
     } catch (err) {
@@ -60,11 +97,7 @@ export default function LoginPage() {
         email: otpEmail,
         otp: otpCode
       });
-      
-      // ✅ Use context login
       await login(response.data.user, response.data.access_token);
-      
-      // Navigate will happen automatically via useEffect
     } catch (err) {
       setError(err.response?.data?.detail || 'Invalid OTP. Please try again.');
       setOtp(['', '', '', '', '', '']);
@@ -91,27 +124,12 @@ export default function LoginPage() {
     }
   };
 
-  const startOtpTimer = () => {
-    const interval = setInterval(() => {
-      setOtpTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setCanResend(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
   const handleOtpChange = (index, value) => {
     if (!/^\d*$/.test(value)) return;
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
-    if (value && index < 5) {
-      document.getElementById(`otp-${index + 1}`)?.focus();
-    }
+    if (value && index < 5) document.getElementById(`otp-${index + 1}`)?.focus();
   };
 
   const handleOtpKeyDown = (index, e) => {
@@ -126,463 +144,316 @@ export default function LoginPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Forgot password handlers
+  const handleFpRequestOtp = async e => {
+    e.preventDefault();
+    setFpError('');
+    setFpSuccess('');
+    setFpLoading(true);
+    try {
+      await axios.post(`${API_URL}/forgot-password`, { email: fpEmail.trim().toLowerCase() });
+      setFpStep(2);
+      setFpOtpTimer(300);
+      setFpCanResend(false);
+      setFpOtp('');
+      setFpSuccess('A reset code was sent to your email. Please check!');
+    } catch (err) {
+      setFpError(err.response?.data?.detail || 'Failed to send reset code');
+    } finally { setFpLoading(false); }
+  };
+
+  const handleFpVerifyOtp = async e => {
+    e.preventDefault();
+    setFpError('');
+    setFpLoading(true);
+    try {
+      await axios.post(`${API_URL}/verify-reset-otp`, {
+        email: fpEmail.trim().toLowerCase(),
+        otp: fpOtp.trim()
+      });
+      setFpStep(3);
+      setFpSuccess('OTP verified! Please set your new password.');
+    } catch (err) {
+      setFpError(err.response?.data?.detail || 'Invalid OTP code');
+    } finally { setFpLoading(false); }
+  };
+
+  const handleFpResetPwd = async e => {
+    e.preventDefault();
+    setFpError('');
+    if (fpNewPwd.length < 8) { setFpError('Password must be at least 8 characters long'); return; }
+    if (fpNewPwd !== fpConfirmPwd) { setFpError('Passwords do not match'); return; }
+    setFpLoading(true);
+    try {
+      await axios.post(`${API_URL}/reset-password`, {
+        email: fpEmail.trim().toLowerCase(),
+        otp: fpOtp.trim(),
+        new_password: fpNewPwd
+      });
+      setFpSuccess('Password reset successful! Redirecting to login...');
+      setTimeout(() => { setShowForgot(false); setFpStep(1); }, 2000);
+    } catch (err) {
+      setFpError(err.response?.data?.detail || 'Failed to reset password');
+    } finally { setFpLoading(false); }
+  };
+
+  // UI Rendering
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      width: '100vw',
-      overflow: 'hidden',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
       {/* Topbar */}
       <nav style={{
-        width: '100%',
-        height: '62px',
-        background: 'linear-gradient(90deg, #2563eb 60%, #6366f1 100%)',
-        boxShadow: '0 2px 8px rgba(30, 91, 184, 0.12)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 32px',
-        flexShrink: 0
+        width: '100%', height: '62px',
+        background: 'linear-gradient(90deg, #c75060 0%, #3580b9 100%)',
+        boxShadow: '0 2px 8px rgba(60, 50, 100, 0.12)', display: 'flex',
+        alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', flexShrink: 0
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <img src="/logo192.png" alt="Logo" style={{
-            height: '38px',
-            width: '38px',
-            borderRadius: '8px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.15)'
-          }} />
-          <span style={{
-            fontSize: '18px',
-            fontWeight: '900',
-            color: '#fff',
-            textShadow: '0 1px 2px rgba(0,0,0,0.1)'
-          }}>M2T HR Portal</span>
+          <img src="/logo.png" alt="Logo" style={{ height: '38px', width: '38px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.15)' }} />
+          <span style={{ fontSize: '18px', fontWeight: '900', color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.1)' }}>M2T HR Portal</span>
         </div>
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '6px 14px',
-          background: 'rgba(255,255,255,0.12)',
-          borderRadius: '8px',
-          border: '1px solid rgba(255,255,255,0.15)',
-          fontSize: '12px',
-          fontWeight: '700',
-          color: 'rgba(255,255,255,0.95)'
+          display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(255,255,255,0.13)', borderRadius: '8px',
+          border: '1px solid rgba(255,255,255,0.17)', fontSize: '12px', fontWeight: '700', color: 'rgba(255,255,255,0.95)'
         }}>
-          <span style={{
-            width: '7px',
-            height: '7px',
-            background: '#4ade80',
-            borderRadius: '50%',
-            boxShadow: '0 0 8px #4ade80'
-          }} />
+          <span style={{ width: '7px', height: '7px', background: '#5ef1f2', borderRadius: '50%', boxShadow: '0 0 8px #86b5ee' }} />
           System Online
         </div>
       </nav>
 
-      {/* Main Layout */}
       <main style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left Panel */}
+        {/* Left Panel: show image as background w/cover style, deep red+blue blend overlay */}
         <div style={{
           flex: 1.3,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'linear-gradient(140deg, #1a2951 0%, #1f3a5f 50%, #0f2744 100%)',
           position: 'relative',
-          padding: '24px',
-          minWidth: '380px'
+          padding: '24px', minWidth: '380px',
+          background: `linear-gradient(125deg, rgba(215,64,91,0.65) 0%, rgba(86,222,251,0.53) 100%), url('/image.jpg') center center/cover no-repeat`
         }}>
           <div style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: '100%',
-            height: '100%',
-            background: `
-              radial-gradient(ellipse 80% 60% at 25% 20%, #6366f1 0%, transparent 85%),
-              radial-gradient(ellipse 60% 50% at 85% 75%, #38bdf8 0%, transparent 75%)
-            `,
-            opacity: 0.15
-          }} />
-          <div style={{
-            zIndex: 2,
-            position: 'relative',
-            maxWidth: '580px',
-            background: 'rgba(16, 24, 37, 0.82)',
-            padding: '56px 52px',
-            borderRadius: '32px',
-            boxShadow: '0 20px 80px rgba(0,0,0,0.35)',
-            border: '1px solid rgba(99, 102, 241, 0.3)',
-            backdropFilter: 'blur(6px)'
+            zIndex: 2, position: 'relative', maxWidth: '580px',
+            background: 'rgba(36, 36, 80, 0.65)', padding: '54px 52px',
+            borderRadius: '28px', boxShadow: '0 20px 80px rgba(60,50,100,0.30)', border: '1px solid rgba(199,80,96,0.23)', backdropFilter: 'blur(4.5px)'
           }}>
-            <div style={{
-              fontSize: '48px',
-              lineHeight: '1.1',
-              color: '#fff',
-              fontWeight: '900',
-              margin: 0
-            }}>
+            <div style={{ fontSize: '44px', lineHeight: '1.13', color: '#fafbff', fontWeight: '900', margin: 0, letterSpacing: "-2px" }}>
               Welcome to <span style={{
-                background: 'linear-gradient(120deg, #a5b4fc, #60a5fa)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text'
+                background: 'linear-gradient(120deg, #b7c5ff, #cbe3ff, #e17fa1)', WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent', backgroundClip: 'text'
               }}>M2T HR Portal</span>
             </div>
-            <div style={{
-              fontSize: '18px',
-              color: '#e0e7ffb7',
-              marginTop: '24px',
-              lineHeight: '1.7',
-              fontWeight: '500'
-            }}>
-              Manage your workday with ease—mark attendance, submit timesheets, stay connected with your team.
-              <br /><br />
-              <strong style={{ color: '#a5b4fc' }}>Built for you. Secured for everyone.</strong>
+            <div style={{ fontSize: '18px', color: '#eaddfd', marginTop: '24px', lineHeight: '1.7', fontWeight: '500' }}>
+              Manage your workday with futuristic ease—mark attendance, submit timesheets, stay networked with your team.
+              <br /><br /><strong style={{ color: '#f9b6d5' }}>Built for you.<span style={{ color: '#7edafd' }}> Secured for everyone.</span></strong>
             </div>
           </div>
         </div>
 
-        {/* Right Panel */}
+        {/* Right Panel - login and forgot password views */}
         <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'linear-gradient(180deg, #f5f7fb 0%, #f0f3ff 100%)',
-          padding: '24px'
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'linear-gradient(120deg, #e5ecfa 0%, #e1f3fe 100%)', padding: '24px'
         }}>
           <div style={{
-            background: 'rgba(255,255,255,0.94)',
-            borderRadius: '28px',
-            boxShadow: '0 20px 60px rgba(37,99,235,0.18), 0 8px 24px rgba(30,41,59,0.08)',
-            border: '1.5px solid rgba(224,231,246,0.8)',
-            padding: '56px 52px 48px 52px',
-            minWidth: '380px',
-            maxWidth: '480px',
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center'
+            background: 'rgba(255,255,255,0.98)', borderRadius: '24px',
+            boxShadow: '0 20px 60px rgba(62,160,251,0.13), 0 8px 24px rgba(201,209,221,0.18)',
+            border: '1.5px solid #e7cfe9', padding: '48px 40px 44px 40px', minWidth: '390px', maxWidth: '450px', width: '100%',
+            display: 'flex', flexDirection: 'column', alignItems: 'center'
           }}>
-            <img src="/logo192.png" alt="Logo" style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '14px',
-              boxShadow: '0 4px 16px rgba(37,99,235,0.2)',
-              background: 'linear-gradient(135deg, #f0f4ff, #f5f7fb)'
-            }} />
-
-            {!showOtpInput ? (
+            <img src="/logo.png" alt="Logo" style={{ width: '58px', height: '58px', marginBottom: '14px', borderRadius: '13px', background: 'linear-gradient(135deg,#fad2e1,#cbe3ff)', boxShadow: '0 3px 11px #dadcff' }} />
+            {!showForgot ? (
               <>
-                <div style={{
-                  width: '100%',
-                  margin: '26px 0 0 0',
-                  fontSize: '28px',
-                  textAlign: 'center',
-                  color: '#101825',
-                  fontWeight: '900'
-                }}>Welcome back</div>
-                <div style={{
-                  color: '#94a3b8',
-                  marginTop: '10px',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  textAlign: 'center'
-                }}>Sign in to your account</div>
-
-                {error && (
-                  <div style={{
-                    width: '96%',
-                    maxWidth: '360px',
-                    background: '#fef2f2',
-                    border: '1.2px solid #fecaca',
-                    color: '#b91c1c',
-                    borderRadius: '12px',
-                    padding: '12px 14px',
-                    margin: '16px auto 0',
-                    fontSize: '13px',
-                    fontWeight: '600'
-                  }}>{error}</div>
+                {/* Login form or OTP */}
+                {!showOtpInput ? (
+                  <>
+                    <div style={{ width: '100%', margin: '20px 0 0 0', fontSize: '27px', textAlign: 'center', color: '#304157', fontWeight: '900', letterSpacing: '-.5px' }}>Welcome back</div>
+                    <div style={{ color: '#93afd5', marginTop: '9px', fontSize: '15px', fontWeight: '600', textAlign: 'center' }}>Sign in to your account</div>
+                    {error && (
+                      <div style={{
+                        width: '95%', maxWidth: '340px', background: '#fedbe8', border: '1.2px solid #ddaac2',
+                        color: '#ab295e', borderRadius: '12px', padding: '12px 14px', margin: '15px auto 0',
+                        fontSize: '13px', fontWeight: '600'
+                      }}>{error}</div>
+                    )}
+                    <form onSubmit={handleLogin} style={{
+                      width: '100%', maxWidth: '340px', display: 'grid', gap: '16px', margin: '23px auto 0'
+                    }}>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: '800', color: '#4883c2', textTransform: 'uppercase', letterSpacing: '0.7px'}}>Email</label>
+                        <input type="email" value={email}
+                          onChange={e => setEmail(e.target.value)} required placeholder="you@m2t-ai.com" disabled={loading}
+                          style={{ width: '100%', height: '44px', padding: '12px 14px', border: '1.3px solid #91c8f7',
+                            borderRadius: '10px', background: '#ebf6fc', fontSize: '15px', outline: 'none', transition: 'all 0.2s', color: '#304157' }}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: '800', color: '#4883c2', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Password</label>
+                        <input type="password" value={password}
+                          onChange={e => setPassword(e.target.value)} required placeholder="Enter your password" disabled={loading}
+                          style={{ width: '100%', height: '44px', padding: '12px 14px', border: '1.3px solid #91c8f7',
+                            borderRadius: '10px', background: '#ebf6fc', fontSize: '15px', outline: 'none', transition: 'all 0.2s', color: '#304157' }}
+                        />
+                      </div>
+                      <div style={{ width: '100%', textAlign: 'right', marginTop: '4px', marginBottom: '8px' }}>
+                        <span onClick={() => setShowForgot(true)} style={{ color: '#c83e75', fontWeight: 700, fontSize: '13px', cursor: 'pointer', textDecoration: 'underline' }}>
+                          Forgot password?
+                        </span>
+                      </div>
+                      <button type="submit" disabled={loading || !email || !password}
+                        style={{
+                          width: '100%',
+                          height: '46px',
+                          border: 'none',
+                          borderRadius: '11px',
+                          background: loading ? '#e8b7c7' : 'linear-gradient(93deg,#c9437d,#5ed2e3)',
+                          color: '#fff',
+                          fontWeight: '900',
+                          fontSize: '16px',
+                          cursor: loading ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 8px 22px #e2e9f3',
+                          marginTop: '10px',
+                          opacity: loading ? 0.6 : 1
+                        }}>
+                        {loading ? 'Sending OTP...' : 'Sign In'}
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  // OTP Verification...
+                  <>
+                    <div style={{
+                      width: '100%', margin: '20px 0 0 0', fontSize: '27px', textAlign: 'center',
+                      color: '#304157', fontWeight: '900'
+                    }}>Enter Verification Code</div>
+                    <div style={{
+                      color: '#95b9fa', marginTop: '9px', fontSize: '15px',
+                      fontWeight: '600', textAlign: 'center'
+                    }}>We sent a 6-digit code to<br /><strong style={{color: "#37659d"}}>{otpEmail}</strong></div>
+                    {error && (
+                      <div style={{
+                        width: '95%', maxWidth: '340px', background: '#fedbe8', border: '1.2px solid #ddaac2',
+                        color: '#ab295e', borderRadius: '12px', padding: '12px 14px', margin: '15px auto 0',
+                        fontSize: '13px', fontWeight: '600'
+                      }}>{error}</div>
+                    )}
+                    <div style={{
+                      display: 'flex', gap: '10px', justifyContent: 'center', margin: '27px 0 17px 0'
+                    }}>
+                      {otp.map((digit, index) => (
+                        <input key={index}
+                          id={`otp-${index}`} type="text" maxLength="1" value={digit}
+                          onChange={e => handleOtpChange(index, e.target.value)}
+                          onKeyDown={e => handleOtpKeyDown(index, e)}
+                          disabled={loading}
+                          autoFocus={index === 0}
+                          style={{
+                            width: '46px', height: '51px', textAlign: 'center', fontSize: '23px', fontWeight: '700',
+                            border: '1.7px solid #c2caff', borderRadius: '9px', background: '#def4ff', color: '#b64e75',
+                            outline: 'none', transition: 'all 0.2s'
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div style={{
+                      textAlign: 'center', fontSize: '14px', color: '#a4caf7', fontWeight: '600', marginTop: '6px'
+                    }}>
+                      {otpTimer > 0 ? <>⏱ Code expires in {formatTime(otpTimer)}</> : <span style={{ color: '#e16374' }}>⚠️ Code expired</span>}
+                    </div>
+                    <button onClick={handleVerifyOtp}
+                      disabled={loading || otp.join('').length !== 6}
+                      style={{
+                        width: '100%', height: '46px', border: 'none', borderRadius: '10px',
+                        background: otp.join('').length !== 6 ? '#fce3ed' : 'linear-gradient(90deg,#e17fa1,#6ef9f2)',
+                        color: '#fff', fontWeight: '900', fontSize: '16px',
+                        cursor: otp.join('').length !== 6 ? 'not-allowed' : 'pointer',
+                        marginTop: '9px', opacity: otp.join('').length !== 6 ? 0.6 : 1,
+                        boxShadow: otp.join('').length === 6 ? '0 8px 22px #dbeefe' : 'none'
+                      }}>
+                      {loading ? 'Verifying...' : 'Verify OTP'}
+                    </button>
+                    {canResend && (
+                      <button onClick={handleResendOtp} disabled={loading} style={{
+                        width: '100%', height: '44px', border: 'none', borderRadius: '10px',
+                        background: 'linear-gradient(90deg, #e17fa1, #6ef9f2)', color: '#fff',
+                        fontWeight: '900', fontSize: '15px', cursor: 'pointer', marginTop: '10px'
+                      }}>Resend OTP</button>
+                    )}
+                    <button
+                      onClick={() => { setShowOtpInput(false); setOtp(['', '', '', '', '', '']); setError(''); }}
+                      disabled={loading}
+                      style={{
+                        width: '100%', height: '42px', border: 'none', borderRadius: '10px', background: '#7db2bf',
+                        color: '#fff', fontWeight: '900', fontSize: '14px', cursor: 'pointer', marginTop: '10px'
+                      }}>← Back to Login</button>
+                  </>
                 )}
-
-                <form onSubmit={handleLogin} style={{
-                  width: '100%',
-                  maxWidth: '360px',
-                  display: 'grid',
-                  gap: '16px',
-                  margin: '28px auto 0'
-                }}>
-                  <div style={{ display: 'grid', gap: '8px' }}>
-                    <label style={{
-                      fontSize: '13px',
-                      fontWeight: '800',
-                      color: '#334155',
-                      textTransform: 'uppercase'
-                    }}>Email</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      placeholder="you@m2t-ai.com"
-                      disabled={loading}
-                      style={{
-                        width: '100%',
-                        height: '46px',
-                        padding: '12px 14px',
-                        border: '1.2px solid #dedfea',
-                        borderRadius: '12px',
-                        background: '#f8f9fc',
-                        fontSize: '15px',
-                        outline: 'none',
-                        transition: 'all 0.2s',
-                        boxSizing: 'border-box'
-                      }}
-                      onFocus={(e) => {
-                        e.target.style.borderColor = '#2563eb';
-                        e.target.style.background = '#fff';
-                        e.target.style.boxShadow = '0 0 0 4px rgba(37,99,235,0.12)';
-                      }}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#dedfea';
-                        e.target.style.background = '#f8f9fc';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'grid', gap: '8px' }}>
-                    <label style={{
-                      fontSize: '13px',
-                      fontWeight: '800',
-                      color: '#334155',
-                      textTransform: 'uppercase'
-                    }}>Password</label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      placeholder="Enter your password"
-                      disabled={loading}
-                      style={{
-                        width: '100%',
-                        height: '46px',
-                        padding: '12px 14px',
-                        border: '1.2px solid #dedfea',
-                        borderRadius: '12px',
-                        background: '#f8f9fc',
-                        fontSize: '15px',
-                        outline: 'none',
-                        transition: 'all 0.2s',
-                        boxSizing: 'border-box'
-                      }}
-                      onFocus={(e) => {
-                        e.target.style.borderColor = '#2563eb';
-                        e.target.style.background = '#fff';
-                        e.target.style.boxShadow = '0 0 0 4px rgba(37,99,235,0.12)';
-                      }}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#dedfea';
-                        e.target.style.background = '#f8f9fc';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading || !email || !password}
-                    style={{
-                      width: '100%',
-                      height: '48px',
-                      border: 'none',
-                      borderRadius: '12px',
-                      background: loading ? '#a5b4fc' : 'linear-gradient(90deg, #2563eb, #6366f1)',
-                      color: '#fff',
-                      fontWeight: '900',
-                      fontSize: '16px',
-                      cursor: loading ? 'not-allowed' : 'pointer',
-                      boxShadow: loading ? 'none' : '0 12px 32px rgba(37,99,235,0.28)',
-                      transition: 'all 0.2s',
-                      marginTop: '10px',
-                      opacity: loading ? 0.55 : 1
-                    }}
-                    onMouseEnter={(e) => !loading && (e.target.style.transform = 'translateY(-2px)')}
-                    onMouseLeave={(e) => !loading && (e.target.style.transform = 'translateY(0)')}
-                  >
-                    {loading ? 'Sending OTP...' : 'Sign In'}
-                  </button>
-                </form>
-              </>
+            </>
             ) : (
+              // ---- FORGOT PASSWORD 3-STEP FLOW IN-PANEL ----
               <>
                 <div style={{
-                  width: '100%',
-                  margin: '26px 0 0 0',
-                  fontSize: '28px',
-                  textAlign: 'center',
-                  color: '#101825',
-                  fontWeight: '900'
-                }}>Enter Verification Code</div>
-                <div style={{
-                  color: '#94a3b8',
-                  marginTop: '10px',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  textAlign: 'center'
+                  width: '100%', margin: '20px 0 0 0', fontSize: '27px',
+                  textAlign: 'center', color: '#31456f', fontWeight: '900'
                 }}>
-                  We sent a 6-digit code to<br />
-                  <strong>{otpEmail}</strong>
+                  Forgot Password
                 </div>
-
-                {error && (
-                  <div style={{
-                    width: '96%',
-                    maxWidth: '360px',
-                    background: '#fef2f2',
-                    border: '1.2px solid #fecaca',
-                    color: '#b91c1c',
-                    borderRadius: '12px',
-                    padding: '12px 14px',
-                    margin: '16px auto 0',
-                    fontSize: '13px',
-                    fontWeight: '600'
-                  }}>{error}</div>
-                )}
-
-                <div style={{
-                  display: 'flex',
-                  gap: '12px',
-                  justifyContent: 'center',
-                  margin: '28px 0 16px 0'
-                }}>
-                  {otp.map((digit, index) => (
-                    <input
-                      key={index}
-                      id={`otp-${index}`}
-                      type="text"
-                      maxLength="1"
-                      value={digit}
-                      onChange={(e) => handleOtpChange(index, e.target.value)}
-                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                      disabled={loading}
-                      autoFocus={index === 0}
+                <div style={{ color: '#97bde2', marginTop: '7px', fontSize: '15px', fontWeight: '600', textAlign: 'center' }}>
+                  {fpStep === 1 && "Enter your email to receive a reset code"}
+                  {fpStep === 2 && `A 6-digit code was sent to ${fpEmail}`}
+                  {fpStep === 3 && "Create your new password"}
+                </div>
+                {fpError && <div style={{ width: '96%', maxWidth: '340px', background: '#fedbe8', border: '1.2px solid #ddaac2', color: '#961a3e', borderRadius: '11px', padding: '12px 14px', margin: '14px auto 0', fontSize: '13px', fontWeight: '600', textAlign: 'center' }}>{fpError}</div>}
+                {fpSuccess && <div style={{ width: '96%', maxWidth: '340px', background: '#d1fae5', border: '1.2px solid #6ee7b7', color: '#17675f', borderRadius: '11px', padding: '11px 13px', margin: '13px auto 0', fontSize: '13px', fontWeight: '600', textAlign: 'center' }}>{fpSuccess}</div>}
+                {fpStep === 1 && (
+                  <form onSubmit={handleFpRequestOtp} style={{ width: '100%' }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: '800', color: '#3171a7', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: ".7px" }}>Email Address</label>
+                    <input type="email" value={fpEmail} onChange={e => setFpEmail(e.target.value)} required disabled={fpLoading} placeholder="your@email.com"
+                      style={{ width: '100%', height: '44px', padding: '12px 14px', border: '1.2px solid #b7c5ff', borderRadius: '10px', background: '#ebf6fc', fontSize: '15px', outline: 'none', marginBottom: '24px', color: "#6d4153" }} />
+                    <button type="submit" disabled={fpLoading || !fpEmail}
                       style={{
-                        width: '50px',
-                        height: '56px',
-                        textAlign: 'center',
-                        fontSize: '24px',
-                        fontWeight: '700',
-                        border: '2px solid #dedfea',
-                        borderRadius: '12px',
-                        background: '#f8f9fc',
-                        color: '#101825',
-                        outline: 'none',
-                        transition: 'all 0.2s'
-                      }}
-                      onFocus={(e) => {
-                        e.target.style.borderColor = '#2563eb';
-                        e.target.style.background = '#fff';
-                        e.target.style.boxShadow = '0 0 0 4px rgba(37,99,235,0.12)';
-                        e.target.style.transform = 'scale(1.05)';
-                      }}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#dedfea';
-                        e.target.style.background = '#f8f9fc';
-                        e.target.style.boxShadow = 'none';
-                        e.target.style.transform = 'scale(1)';
-                      }}
-                    />
-                  ))}
-                </div>
-
-                <div style={{
-                  textAlign: 'center',
-                  fontSize: '14px',
-                  color: '#94a3b8',
-                  fontWeight: '600',
-                  marginTop: '12px'
-                }}>
-                  {otpTimer > 0 ? (
-                    <>⏱ Code expires in {formatTime(otpTimer)}</>
-                  ) : (
-                    <span style={{ color: '#ef4444' }}>⚠️ Code expired</span>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleVerifyOtp}
-                  disabled={loading || otp.join('').length !== 6}
-                  style={{
-                    width: '100%',
-                    height: '48px',
-                    border: 'none',
-                    borderRadius: '12px',
-                    background: otp.join('').length !== 6 ? '#a5b4fc' : 'linear-gradient(90deg, #2563eb, #6366f1)',
-                    color: '#fff',
-                    fontWeight: '900',
-                    fontSize: '16px',
-                    cursor: otp.join('').length !== 6 ? 'not-allowed' : 'pointer',
-                    marginTop: '10px',
-                    opacity: otp.join('').length !== 6 ? 0.55 : 1,
-                    boxShadow: otp.join('').length === 6 ? '0 12px 32px rgba(37,99,235,0.28)' : 'none'
-                  }}
-                  onMouseEnter={(e) => otp.join('').length === 6 && (e.target.style.transform = 'translateY(-2px)')}
-                  onMouseLeave={(e) => otp.join('').length === 6 && (e.target.style.transform = 'translateY(0)')}
-                >
-                  {loading ? 'Verifying...' : 'Verify OTP'}
-                </button>
-
-                {canResend && (
-                  <button
-                    onClick={handleResendOtp}
-                    disabled={loading}
-                    style={{
-                      width: '100%',
-                      height: '48px',
-                      border: 'none',
-                      borderRadius: '12px',
-                      background: 'linear-gradient(90deg, #2563eb, #6366f1)',
-                      color: '#fff',
-                      fontWeight: '900',
-                      fontSize: '16px',
-                      cursor: 'pointer',
-                      marginTop: '10px'
-                    }}
-                  >
-                    Resend OTP
-                  </button>
+                        width: '100%', height: '46px', border: 'none', borderRadius: '11px',
+                        background: fpLoading ? '#e8b7c7' : 'linear-gradient(93deg,#c9437d,#5ed2e3)', color: '#fff',
+                        fontWeight: '900', fontSize: '16px', cursor: fpLoading ? 'not-allowed' : 'pointer', boxShadow: '0 8px 22px #e2e9f3', transition: 'all 0.2s'
+                      }}>{fpLoading ? 'Sending...' : 'Send Reset Code'}</button>
+                  </form>
                 )}
-
-                <button
-                  onClick={() => {
-                    setShowOtpInput(false);
-                    setOtp(['', '', '', '', '', '']);
-                    setError('');
-                  }}
-                  disabled={loading}
-                  style={{
-                    width: '100%',
-                    height: '48px',
-                    border: 'none',
-                    borderRadius: '12px',
-                    background: '#6b7280',
-                    color: '#fff',
-                    fontWeight: '900',
-                    fontSize: '16px',
-                    cursor: 'pointer',
-                    marginTop: '10px'
-                  }}
-                >
-                  ← Back to Login
-                </button>
+                {fpStep === 2 && (
+                  <form onSubmit={handleFpVerifyOtp} style={{ width: '100%' }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: '800', color: '#3171a7', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Verification Code</label>
+                    <input type="text" value={fpOtp} autoFocus onChange={e => setFpOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6} required disabled={fpLoading}
+                      style={{ width: '100%', height: '44px', padding: '12px 14px', border: '1.2px solid #b7c5ff', borderRadius: '10px', background: '#ebf6fc', fontSize: '22px', letterSpacing: '12px', textAlign: 'center', outline: 'none', marginBottom: '24px', color: "#417ee7" }} />
+                    <button type="submit" disabled={fpLoading || fpOtp.length !== 6}
+                      style={{
+                        width: '100%', height: '46px', border: 'none', borderRadius: '11px',
+                        background: fpOtp.length !== 6 ? '#fce3ed' : 'linear-gradient(90deg,#e17fa1,#6ef9f2)',
+                        color: '#fff', fontWeight: '900', fontSize: '16px', cursor: fpOtp.length !== 6 ? 'not-allowed' : 'pointer', boxShadow: fpOtp.length === 6 ? '0 8px 22px #dbeefe' : 'none', transition: 'all 0.2s'
+                      }}>{fpLoading ? 'Verifying...' : 'Verify Code'}</button>
+                    <div style={{ marginTop: '10px', textAlign: 'center', color: '#91aadf', fontWeight: '600', fontSize: '13.5px' }}>
+                      {fpOtpTimer > 0 ? `⏱ Code expires in ${formatTime(fpOtpTimer)}` : <span style={{ color: '#e16374' }}>⚠️ Code expired</span>}
+                    </div>
+                    <button type="button" onClick={() => setFpStep(1)} disabled={fpLoading}
+                      style={{ marginTop: '12px', background: '#6b7280', color: '#fff', fontWeight: '900', fontSize: '14px', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', width: '100%' }}>Back</button>
+                  </form>
+                )}
+                {fpStep === 3 && (
+                  <form onSubmit={handleFpResetPwd} style={{ width: '100%' }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: '800', color: '#3171a7', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>New Password</label>
+                    <input type="password" value={fpNewPwd} onChange={e => setFpNewPwd(e.target.value)} required disabled={fpLoading} placeholder="Enter new password"
+                      style={{ width: '100%', height: '44px', padding: '12px 14px', border: '1.2px solid #b7c5ff', borderRadius: '10px', background: '#ebf6fc', fontSize: '15px', outline: 'none', marginBottom: '16px', color: "#775166" }} />
+                    <label style={{ fontSize: '12.5px', fontWeight: '800', color: '#3171a7', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Confirm Password</label>
+                    <input type="password" value={fpConfirmPwd} onChange={e => setFpConfirmPwd(e.target.value)} required disabled={fpLoading} placeholder="Confirm new password"
+                      style={{ width: '100%', height: '44px', padding: '12px 14px', border: '1.2px solid #b7c5ff', borderRadius: '10px', background: '#ebf6fc', fontSize: '15px', outline: 'none', marginBottom: '24px', color: "#795162" }} />
+                    <button type="submit" disabled={fpLoading}
+                      style={{
+                        width: '100%', height: '46px', border: 'none', borderRadius: '11px',
+                        background: 'linear-gradient(90deg, #e17fa1, #6ef9f2)', color: '#fff', fontWeight: '900', fontSize: '16px',
+                        cursor: fpLoading ? 'not-allowed' : 'pointer', boxShadow: '0 8px 22px #dbeefe', transition: 'all 0.2s'
+                      }}>{fpLoading ? 'Resetting...' : 'Reset Password'}</button>
+                    <button type="button" onClick={() => setFpStep(1)} disabled={fpLoading}
+                      style={{ marginTop: '12px', background: '#6b7280', color: '#fff', fontWeight: '900', fontSize: '14px', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', width: '100%' }}>Back</button>
+                  </form>
+                )}
+                <button onClick={() => setShowForgot(false)} style={{ marginTop: '15px', color: '#c83e75', background: 'none', border: 'none', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', fontSize: '15px' }}>Back to login</button>
               </>
             )}
           </div>
