@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useUser } from '../../context/UserContext';
 import timesheetService from '../../services/timesheetService';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
+
 
 function PayrollExport() {
   const { token, user } = useUser();
@@ -12,12 +14,14 @@ function PayrollExport() {
   const [error, setError] = useState('');
   const [allUsers, setAllUsers] = useState([]);
 
+
   // ✅ FETCH ALL USERS FIRST (to get user IDs)
   useEffect(() => {
     if (user && user.role === 'HR' && token) {
       fetchAllUsers();
     }
   }, [token, user]);
+
 
   // ✅ FETCH ALL USERS TO GET USER IDs
   const fetchAllUsers = async () => {
@@ -33,6 +37,7 @@ function PayrollExport() {
     }
   };
 
+
   // ✅ FETCH ALL EMPLOYEE TIMESHEETS
   const fetchEmployeeTimesheets = async (usersList) => {
     setLoading(true);
@@ -41,6 +46,7 @@ function PayrollExport() {
     try {
       const year = new Date().getFullYear();
       const month = new Date().getMonth() + 1;
+
 
       const hrDashboard = await timesheetService.getHRDashboard(token);
       const monthSummary = hrDashboard.month_summary || {};
@@ -65,7 +71,9 @@ function PayrollExport() {
         }
       }
 
+
       setPayrollData(employeeList);
+
 
     } catch (err) {
       console.error('Error fetching employee data:', err);
@@ -74,6 +82,7 @@ function PayrollExport() {
       setLoading(false);
     }
   };
+
 
   // ✅ FETCH SPECIFIC EMPLOYEE TIMESHEETS
   const fetchEmployeeDetailedTimesheets = async (employeeId, year, month) => {
@@ -88,173 +97,435 @@ function PayrollExport() {
     }
   };
 
-  // ✅ EXPORT ALL EMPLOYEES AS CSV (WITH LOCKED STATUS)
-  // ✅ EXPORT ALL EMPLOYEES AS CSV (FIXED)
-const exportAllCSV = async () => {
-  setLoading(true);
-  
-  try {
-    const headers = [
-      'Employee Name',
-      'Email',
-      'Date',
-      'Start Time',
-      'End Time',
-      'Hours Logged',
-      'Status',
-      'Is Locked',
-      'Daily Description',
-      'Morning Activities',
-      'Morning Output',
-      'Afternoon Activities',
-      'Afternoon Output'
-    ];
 
-    const rows = [];
-    const year = parseInt(startDate.split('-')[0]);
-    const month = parseInt(startDate.split('-')[1]);
-
-    for (const emp of payrollData) {
-      try {
-        const timesheets = await fetchEmployeeDetailedTimesheets(emp.id, year, month);
-
-        if (timesheets.length === 0) {
-          rows.push([
-            emp.name,
-            emp.email,
-            '-',
-            '-',
-            '-',
-            0,
-            'No Data',
-            'No',
-            '-',
-            '-',
-            '-',
-            '-',
-            '-'
-          ]);
-        } else {
-          timesheets.forEach(ts => {
-            const morningActivity = ts.activities?.find(a => a.slot === 'morning');
-            const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
-
-            rows.push([
-              emp.name,
-              emp.email,
-              ts.date,
-              ts.start_time || '-',
-              ts.end_time || '-',
-              ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,  // ✅ FIXED: Divide by 60
-              ts.status,
-              ts.is_locked ? 'Yes' : 'No',  // ✅ REMOVED EMOJI
-              ts.description || '-',
-              morningActivity?.description || '-',
-              morningActivity?.output || '-',
-              afternoonActivity?.description || '-',
-              afternoonActivity?.output || '-'
-            ]);
-          });
-        }
-      } catch (err) {
-        console.error(`Error fetching details for ${emp.name}:`, err);
-      }
-    }
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    downloadCSV(csvContent, `payroll_detailed_${startDate}_to_${endDate}.csv`);
-
-  } catch (err) {
-    setError('Failed to export CSV');
-    console.error(err);
-  } finally {
-    setLoading(false);
-  }
-};
-
-// ✅ EXPORT INDIVIDUAL EMPLOYEE AS CSV (FIXED)
-const exportIndividualCSV = async (employee) => {
-  setLoading(true);
-  
-  try {
-    const year = parseInt(startDate.split('-')[0]);
-    const month = parseInt(startDate.split('-')[1]);
+  // ✅ EXPORT ALL AS EXCEL WITH MULTIPLE SHEETS (SIMPLIFIED OVERVIEW)
+  const exportAllExcel = async () => {
+    setLoading(true);
     
-    console.log(`Exporting for employee:`, employee);
-    
-    const timesheets = await fetchEmployeeDetailedTimesheets(employee.id, year, month);
+    try {
+      const year = parseInt(startDate.split('-')[0]);
+      const month = parseInt(startDate.split('-')[1]);
 
-    console.log(`Fetched ${timesheets.length} timesheets for ${employee.name}`);
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
 
-    if (timesheets.length === 0) {
-      setError(`No timesheet data found for ${employee.name} in ${year}-${month}`);
-      setLoading(false);
-      return;
-    }
-
-    const headers = [
-      'Date',
-      'Start Time',
-      'End Time',
-      'Hours Logged',
-      'Status',
-      'Is Locked',
-      'Daily Description',
-      'Morning Activities',
-      'Morning Output',
-      'Afternoon Activities',
-      'Afternoon Output'
-    ];
-
-    const rows = timesheets.map(ts => {
-      const morningActivity = ts.activities?.find(a => a.slot === 'morning');
-      const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
-
-      return [
-        ts.date,
-        ts.start_time || '-',
-        ts.end_time || '-',
-        ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,  // ✅ FIXED: Divide by 60
-        ts.status,
-        ts.is_locked ? 'Yes' : 'No',  // ✅ REMOVED EMOJI
-        ts.description || '-',
-        morningActivity?.description || '-',
-        morningActivity?.output || '-',
-        afternoonActivity?.description || '-',
-        afternoonActivity?.output || '-'
+      // ============================================
+      // SHEET 1: OVERVIEW SUMMARY (SIMPLIFIED)
+      // ============================================
+      const summaryData = [
+        ['PAYROLL OVERVIEW SUMMARY'],
+        ['Period', `${startDate} to ${endDate}`],
+        ['Generated On', new Date().toLocaleString()],
+        [''],
+        ['Employee Name', 'Email', 'Total Hours', 'Filled Days', 'Pending Days', 'Locked Days']
       ];
-    });
 
-    const totalHours = timesheets.reduce((sum, ts) => sum + (ts.hours_logged || 0), 0) / 60;
-    const filledDays = timesheets.filter(ts => ts.status === 'filled').length;
-    const workingDays = timesheets.filter(ts => ts.status !== 'weekend').length;
-    const lockedDays = timesheets.filter(ts => ts.is_locked).length;
+      // Add each employee summary
+      for (const emp of payrollData) {
+        summaryData.push([
+          emp.name,
+          emp.email,
+          emp.totalHours.toFixed(1),
+          emp.filledDays,
+          emp.pendingDays,
+          emp.lockedDays
+        ]);
+      }
 
-    const csvContent = [
-      `Employee: ${employee.name}`,
-      `Email: ${employee.email}`,
-      `Period: ${startDate} to ${endDate}`,
-      `Total Hours: ${totalHours.toFixed(1)}`,
-      `Filled Days: ${filledDays}/${workingDays}`,
-      `Locked Days: ${lockedDays}`,
-      '',
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+      // Add totals row
+      summaryData.push(['']);
+      summaryData.push([
+        'TOTALS',
+        '',
+        payrollData.reduce((sum, emp) => sum + emp.totalHours, 0).toFixed(1),
+        payrollData.reduce((sum, emp) => sum + emp.filledDays, 0),
+        payrollData.reduce((sum, emp) => sum + emp.pendingDays, 0),
+        payrollData.reduce((sum, emp) => sum + emp.lockedDays, 0)
+      ]);
 
-    downloadCSV(csvContent, `${employee.name}_detailed_${year}_${month}.csv`);
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+      
+      // Set column widths for summary sheet
+      summarySheet['!cols'] = [
+        { wch: 25 }, // Employee Name
+        { wch: 30 }, // Email
+        { wch: 12 }, // Total Hours
+        { wch: 12 }, // Filled Days
+        { wch: 13 }, // Pending Days
+        { wch: 12 }  // Locked Days
+      ];
 
-  } catch (err) {
-    setError(`Failed to export ${employee.name}'s CSV: ${err.message}`);
-    console.error(err);
-  } finally {
-    setLoading(false);
-  }
-};
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Overview Summary');
+
+      // ============================================
+      // INDIVIDUAL EMPLOYEE SHEETS
+      // ============================================
+      for (const emp of payrollData) {
+        try {
+          const timesheets = await fetchEmployeeDetailedTimesheets(emp.id, year, month);
+
+          // Create employee sheet data
+          const employeeData = [
+            [`${emp.name} - Detailed Timesheet`],
+            ['Email', emp.email],
+            ['Period', `${startDate} to ${endDate}`],
+            ['Total Hours', `${emp.totalHours.toFixed(1)}h`],
+            ['Filled Days', `${emp.filledDays}/${emp.workingDays}`],
+            ['Locked Days', emp.lockedDays],
+            [''],
+            ['Date', 'Start Time', 'End Time', 'Hours Logged', 'Status', 'Is Locked', 'Daily Description', 'Morning Activities', 'Morning Output', 'Afternoon Activities', 'Afternoon Output']
+          ];
+
+          if (timesheets.length === 0) {
+            employeeData.push(['-', '-', '-', 0, 'No Data', 'No', '-', '-', '-', '-', '-']);
+          } else {
+            timesheets.forEach(ts => {
+              const morningActivity = ts.activities?.find(a => a.slot === 'morning');
+              const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
+
+              employeeData.push([
+                ts.date,
+                ts.start_time || '-',
+                ts.end_time || '-',
+                ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,
+                ts.status,
+                ts.is_locked ? 'Yes' : 'No',
+                ts.description || '-',
+                morningActivity?.description || '-',
+                morningActivity?.output || '-',
+                afternoonActivity?.description || '-',
+                afternoonActivity?.output || '-'
+              ]);
+            });
+
+            // Add summary for this employee
+            const totalHours = timesheets.reduce((sum, ts) => sum + (ts.hours_logged || 0), 0) / 60;
+            const filledDays = timesheets.filter(ts => ts.status === 'filled').length;
+            const workingDays = timesheets.filter(ts => ts.status !== 'weekend').length;
+            const lockedDays = timesheets.filter(ts => ts.is_locked).length;
+
+            employeeData.push(['']);
+            employeeData.push(['Summary', '', '', '', '', '', '', '', '', '', '']);
+            employeeData.push(['Total Hours', totalHours.toFixed(1) + 'h']);
+            employeeData.push(['Filled Days', `${filledDays}/${workingDays}`]);
+            employeeData.push(['Locked Days', lockedDays]);
+          }
+
+          const employeeSheet = XLSX.utils.aoa_to_sheet(employeeData);
+          
+          // Set column widths for employee sheet
+          employeeSheet['!cols'] = [
+            { wch: 12 }, // Date
+            { wch: 12 }, // Start Time
+            { wch: 12 }, // End Time
+            { wch: 13 }, // Hours Logged
+            { wch: 10 }, // Status
+            { wch: 10 }, // Is Locked
+            { wch: 30 }, // Daily Description
+            { wch: 30 }, // Morning Activities
+            { wch: 30 }, // Morning Output
+            { wch: 30 }, // Afternoon Activities
+            { wch: 30 }  // Afternoon Output
+          ];
+
+          // Sanitize sheet name (max 31 chars, no special chars)
+          let sheetName = emp.name.substring(0, 28);
+          sheetName = sheetName.replace(/[:\\/?*\[\]]/g, '');
+          
+          XLSX.utils.book_append_sheet(workbook, employeeSheet, sheetName);
+          
+        } catch (err) {
+          console.error(`Error creating sheet for ${emp.name}:`, err);
+        }
+      }
+
+      // Write the Excel file
+      const fileName = `payroll_detailed_${startDate}_to_${endDate}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      alert(`✅ Excel export completed! ${payrollData.length} employee sheets created.`);
+
+    } catch (err) {
+      setError('Failed to export Excel: ' + err.message);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // ✅ EXPORT ALL AS CSV WITH STRUCTURED SECTIONS (SIMILAR TO EXCEL)
+  const exportAllCSV = async () => {
+    setLoading(true);
+    
+    try {
+      const year = parseInt(startDate.split('-')[0]);
+      const month = parseInt(startDate.split('-')[1]);
+
+      let csvContent = '';
+
+      // ============================================
+      // SECTION 1: OVERVIEW SUMMARY
+      // ============================================
+      csvContent += '==========================================\n';
+      csvContent += 'PAYROLL OVERVIEW SUMMARY\n';
+      csvContent += '==========================================\n';
+      csvContent += `Period,${startDate} to ${endDate}\n`;
+      csvContent += `Generated On,${new Date().toLocaleString()}\n`;
+      csvContent += '\n';
+      
+      // Summary table headers
+      csvContent += 'Employee Name,Email,Total Hours,Filled Days,Pending Days,Locked Days\n';
+      
+      // Add each employee summary
+      for (const emp of payrollData) {
+        csvContent += `"${emp.name}","${emp.email}",${emp.totalHours.toFixed(1)},${emp.filledDays},${emp.pendingDays},${emp.lockedDays}\n`;
+      }
+      
+      // Add totals
+      csvContent += '\n';
+      csvContent += `TOTALS,"",${payrollData.reduce((sum, emp) => sum + emp.totalHours, 0).toFixed(1)},${payrollData.reduce((sum, emp) => sum + emp.filledDays, 0)},${payrollData.reduce((sum, emp) => sum + emp.pendingDays, 0)},${payrollData.reduce((sum, emp) => sum + emp.lockedDays, 0)}\n`;
+      csvContent += '\n\n';
+
+      // ============================================
+      // SECTION 2: INDIVIDUAL EMPLOYEE DETAILS
+      // ============================================
+      for (const emp of payrollData) {
+        try {
+          const timesheets = await fetchEmployeeDetailedTimesheets(emp.id, year, month);
+
+          csvContent += '==========================================\n';
+          csvContent += `${emp.name.toUpperCase()} - DETAILED TIMESHEET\n`;
+          csvContent += '==========================================\n';
+          csvContent += `Email,${emp.email}\n`;
+          csvContent += `Period,${startDate} to ${endDate}\n`;
+          csvContent += `Total Hours,${emp.totalHours.toFixed(1)}h\n`;
+          csvContent += `Filled Days,${emp.filledDays}/${emp.workingDays}\n`;
+          csvContent += `Locked Days,${emp.lockedDays}\n`;
+          csvContent += '\n';
+
+          // Detailed timesheet headers
+          csvContent += 'Date,Start Time,End Time,Hours Logged,Status,Is Locked,Daily Description,Morning Activities,Morning Output,Afternoon Activities,Afternoon Output\n';
+
+          if (timesheets.length === 0) {
+            csvContent += '"-","-","-","0","No Data","No","-","-","-","-","-"\n';
+          } else {
+            timesheets.forEach(ts => {
+              const morningActivity = ts.activities?.find(a => a.slot === 'morning');
+              const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
+
+              const row = [
+                ts.date,
+                ts.start_time || '-',
+                ts.end_time || '-',
+                ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,
+                ts.status,
+                ts.is_locked ? 'Yes' : 'No',
+                ts.description || '-',
+                morningActivity?.description || '-',
+                morningActivity?.output || '-',
+                afternoonActivity?.description || '-',
+                afternoonActivity?.output || '-'
+              ];
+
+              csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
+            });
+
+            // Add employee summary
+            const totalHours = timesheets.reduce((sum, ts) => sum + (ts.hours_logged || 0), 0) / 60;
+            const filledDays = timesheets.filter(ts => ts.status === 'filled').length;
+            const workingDays = timesheets.filter(ts => ts.status !== 'weekend').length;
+            const lockedDays = timesheets.filter(ts => ts.is_locked).length;
+
+            csvContent += '\n';
+            csvContent += 'SUMMARY\n';
+            csvContent += `Total Hours,${totalHours.toFixed(1)}h\n`;
+            csvContent += `Filled Days,${filledDays}/${workingDays}\n`;
+            csvContent += `Locked Days,${lockedDays}\n`;
+          }
+
+          csvContent += '\n\n';
+
+        } catch (err) {
+          console.error(`Error fetching details for ${emp.name}:`, err);
+          csvContent += `Error fetching data for ${emp.name}\n\n\n`;
+        }
+      }
+
+      downloadCSV(csvContent, `payroll_detailed_${startDate}_to_${endDate}.csv`);
+      alert(`✅ CSV export completed! Overview summary and ${payrollData.length} employee sections included.`);
+
+    } catch (err) {
+      setError('Failed to export CSV: ' + err.message);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // ✅ EXPORT INDIVIDUAL EMPLOYEE AS CSV
+  const exportIndividualCSV = async (employee) => {
+    setLoading(true);
+    
+    try {
+      const year = parseInt(startDate.split('-')[0]);
+      const month = parseInt(startDate.split('-')[1]);
+      
+      console.log(`Exporting for employee:`, employee);
+      
+      const timesheets = await fetchEmployeeDetailedTimesheets(employee.id, year, month);
+
+      console.log(`Fetched ${timesheets.length} timesheets for ${employee.name}`);
+
+      if (timesheets.length === 0) {
+        setError(`No timesheet data found for ${employee.name} in ${year}-${month}`);
+        setLoading(false);
+        return;
+      }
+
+      const headers = [
+        'Date',
+        'Start Time',
+        'End Time',
+        'Hours Logged',
+        'Status',
+        'Is Locked',
+        'Daily Description',
+        'Morning Activities',
+        'Morning Output',
+        'Afternoon Activities',
+        'Afternoon Output'
+      ];
+
+      const rows = timesheets.map(ts => {
+        const morningActivity = ts.activities?.find(a => a.slot === 'morning');
+        const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
+
+        return [
+          ts.date,
+          ts.start_time || '-',
+          ts.end_time || '-',
+          ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,
+          ts.status,
+          ts.is_locked ? 'Yes' : 'No',
+          ts.description || '-',
+          morningActivity?.description || '-',
+          morningActivity?.output || '-',
+          afternoonActivity?.description || '-',
+          afternoonActivity?.output || '-'
+        ];
+      });
+
+      const totalHours = timesheets.reduce((sum, ts) => sum + (ts.hours_logged || 0), 0) / 60;
+      const filledDays = timesheets.filter(ts => ts.status === 'filled').length;
+      const workingDays = timesheets.filter(ts => ts.status !== 'weekend').length;
+      const lockedDays = timesheets.filter(ts => ts.is_locked).length;
+
+      const csvContent = [
+        `Employee: ${employee.name}`,
+        `Email: ${employee.email}`,
+        `Period: ${startDate} to ${endDate}`,
+        `Total Hours: ${totalHours.toFixed(1)}`,
+        `Filled Days: ${filledDays}/${workingDays}`,
+        `Locked Days: ${lockedDays}`,
+        '',
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+
+      downloadCSV(csvContent, `${employee.name}_detailed_${year}_${month}.csv`);
+
+    } catch (err) {
+      setError(`Failed to export ${employee.name}'s CSV: ${err.message}`);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // ✅ EXPORT INDIVIDUAL EMPLOYEE AS EXCEL
+  const exportIndividualExcel = async (employee) => {
+    setLoading(true);
+    
+    try {
+      const year = parseInt(startDate.split('-')[0]);
+      const month = parseInt(startDate.split('-')[1]);
+      
+      const timesheets = await fetchEmployeeDetailedTimesheets(employee.id, year, month);
+
+      if (timesheets.length === 0) {
+        setError(`No timesheet data found for ${employee.name} in ${year}-${month}`);
+        setLoading(false);
+        return;
+      }
+
+      // Create employee sheet data
+      const employeeData = [
+        [`${employee.name} - Detailed Timesheet`],
+        ['Email', employee.email],
+        ['Period', `${startDate} to ${endDate}`],
+        ['Total Hours', `${employee.totalHours.toFixed(1)}h`],
+        ['Filled Days', `${employee.filledDays}/${employee.workingDays}`],
+        ['Locked Days', employee.lockedDays],
+        [''],
+        ['Date', 'Start Time', 'End Time', 'Hours Logged', 'Status', 'Is Locked', 'Daily Description', 'Morning Activities', 'Morning Output', 'Afternoon Activities', 'Afternoon Output']
+      ];
+
+      timesheets.forEach(ts => {
+        const morningActivity = ts.activities?.find(a => a.slot === 'morning');
+        const afternoonActivity = ts.activities?.find(a => a.slot === 'afternoon');
+
+        employeeData.push([
+          ts.date,
+          ts.start_time || '-',
+          ts.end_time || '-',
+          ts.hours_logged ? (ts.hours_logged / 60).toFixed(1) : 0,
+          ts.status,
+          ts.is_locked ? 'Yes' : 'No',
+          ts.description || '-',
+          morningActivity?.description || '-',
+          morningActivity?.output || '-',
+          afternoonActivity?.description || '-',
+          afternoonActivity?.output || '-'
+        ]);
+      });
+
+      // Add summary
+      const totalHours = timesheets.reduce((sum, ts) => sum + (ts.hours_logged || 0), 0) / 60;
+      const filledDays = timesheets.filter(ts => ts.status === 'filled').length;
+      const workingDays = timesheets.filter(ts => ts.status !== 'weekend').length;
+      const lockedDays = timesheets.filter(ts => ts.is_locked).length;
+
+      employeeData.push(['']);
+      employeeData.push(['Summary', '', '', '', '', '', '', '', '', '', '']);
+      employeeData.push(['Total Hours', totalHours.toFixed(1) + 'h']);
+      employeeData.push(['Filled Days', `${filledDays}/${workingDays}`]);
+      employeeData.push(['Locked Days', lockedDays]);
+
+      const worksheet = XLSX.utils.aoa_to_sheet(employeeData);
+      
+      // Set column widths
+      worksheet['!cols'] = [
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 10 },
+        { wch: 10 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, employee.name.substring(0, 31));
+
+      const fileName = `${employee.name}_detailed_${year}_${month}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+    } catch (err) {
+      setError(`Failed to export ${employee.name}'s Excel: ${err.message}`);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   // Helper function to download CSV
   const downloadCSV = (content, filename) => {
@@ -267,11 +538,13 @@ const exportIndividualCSV = async (employee) => {
     window.URL.revokeObjectURL(url);
   };
 
+
   // Styles
   const containerStyle = {
     maxWidth: '1200px',
     margin: '0 auto',
   };
+
 
   const searchContainerStyle = {
     marginBottom: '24px',
@@ -281,6 +554,7 @@ const exportIndividualCSV = async (employee) => {
     alignItems: 'flex-end',
   };
 
+
   const datePickerStyle = {
     padding: '10px 12px',
     fontSize: '14px',
@@ -288,6 +562,7 @@ const exportIndividualCSV = async (employee) => {
     borderRadius: '6px',
     cursor: 'pointer',
   };
+
 
   const exportButtonStyle = {
     padding: '10px 20px',
@@ -302,6 +577,20 @@ const exportIndividualCSV = async (employee) => {
     transition: 'all 0.3s ease',
   };
 
+  const exportButtonExcelStyle = {
+    padding: '10px 20px',
+    backgroundColor: '#059669',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: loading ? 'not-allowed' : 'pointer',
+    opacity: loading ? 0.6 : 1,
+    transition: 'all 0.3s ease',
+  };
+
+
   const payrollSummaryStyle = {
     backgroundColor: '#f0fdf4',
     border: '2px solid #10B981',
@@ -310,6 +599,7 @@ const exportIndividualCSV = async (employee) => {
     marginBottom: '24px',
   };
 
+
   const payrollStatsGridStyle = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
@@ -317,9 +607,11 @@ const exportIndividualCSV = async (employee) => {
     marginTop: '16px',
   };
 
+
   const payrollStatStyle = {
     textAlign: 'center',
   };
+
 
   const payrollStatValueStyle = {
     fontSize: '24px',
@@ -328,10 +620,12 @@ const exportIndividualCSV = async (employee) => {
     marginBottom: '4px',
   };
 
+
   const payrollStatLabelStyle = {
     fontSize: '12px',
     color: '#666',
   };
+
 
   const cardStyle = {
     backgroundColor: 'white',
@@ -342,6 +636,7 @@ const exportIndividualCSV = async (employee) => {
     boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
   };
 
+
   const employeeHeaderStyle = {
     display: 'flex',
     justifyContent: 'space-between',
@@ -351,17 +646,20 @@ const exportIndividualCSV = async (employee) => {
     gap: '12px',
   };
 
+
   const employeeNameStyle = {
     fontSize: '18px',
     fontWeight: '600',
     color: '#333',
   };
 
+
   const detailStyle = {
     fontSize: '14px',
     color: '#666',
     marginBottom: '12px',
   };
+
 
   const errorStyle = {
     backgroundColor: '#FEE2E2',
@@ -375,12 +673,43 @@ const exportIndividualCSV = async (employee) => {
     alignItems: 'center',
   };
 
+
   const loadingStyle = {
     textAlign: 'center',
     padding: '40px',
     color: '#666',
     fontSize: '16px',
   };
+
+  const buttonGroupStyle = {
+    display: 'flex',
+    gap: '8px',
+  };
+
+  const individualButtonStyle = {
+    padding: '8px 16px',
+    backgroundColor: '#004aad',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '500',
+    cursor: loading ? 'not-allowed' : 'pointer',
+    opacity: loading ? 0.6 : 1,
+  };
+
+  const individualButtonExcelStyle = {
+    padding: '8px 16px',
+    backgroundColor: '#059669',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '500',
+    cursor: loading ? 'not-allowed' : 'pointer',
+    opacity: loading ? 0.6 : 1,
+  };
+
 
   // ✅ AUTHORIZATION CHECK
   if (!user || user.role !== 'HR') {
@@ -391,9 +720,11 @@ const exportIndividualCSV = async (employee) => {
     );
   }
 
+
   if (loading) {
     return <div style={loadingStyle}>Loading payroll data...</div>;
   }
+
 
   return (
     <div style={containerStyle}>
@@ -416,6 +747,7 @@ const exportIndividualCSV = async (employee) => {
           </button>
         </div>
       )}
+
 
       {/* Date Range Picker */}
       <div style={searchContainerStyle}>
@@ -448,9 +780,19 @@ const exportIndividualCSV = async (employee) => {
           onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = '#059669')}
           onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = '#10B981')}
         >
-          {loading ? '⏳ Exporting...' : '📥 Export All as CSV (Detailed)'}
+          {loading ? '⏳ Exporting...' : '📥 Export All as CSV'}
+        </button>
+        <button
+          onClick={exportAllExcel}
+          style={exportButtonExcelStyle}
+          disabled={loading}
+          onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = '#047857')}
+          onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = '#059669')}
+        >
+          {loading ? '⏳ Exporting...' : '📊 Export All as Excel (Multi-Sheet)'}
         </button>
       </div>
+
 
       {/* Payroll Summary */}
       <div style={payrollSummaryStyle}>
@@ -485,6 +827,7 @@ const exportIndividualCSV = async (employee) => {
         </div>
       </div>
 
+
       {/* Employee List */}
       {payrollData.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
@@ -500,25 +843,26 @@ const exportIndividualCSV = async (employee) => {
                   {emp.email} • {emp.filledDays}/{emp.workingDays} days filled • {emp.totalHours.toFixed(1)}h total
                 </div>
               </div>
-              <button
-                onClick={() => exportIndividualCSV(emp)}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#004aad',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  opacity: loading ? 0.6 : 1,
-                }}
-                disabled={loading}
-                onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = '#003380')}
-                onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = '#004aad')}
-              >
-                📥 Export Detailed
-              </button>
+              <div style={buttonGroupStyle}>
+                <button
+                  onClick={() => exportIndividualCSV(emp)}
+                  style={individualButtonStyle}
+                  disabled={loading}
+                  onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = '#003380')}
+                  onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = '#004aad')}
+                >
+                  📥 CSV
+                </button>
+                <button
+                  onClick={() => exportIndividualExcel(emp)}
+                  style={individualButtonExcelStyle}
+                  disabled={loading}
+                  onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = '#047857')}
+                  onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = '#059669')}
+                >
+                  📊 Excel
+                </button>
+              </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
               <div style={detailStyle}>
@@ -540,5 +884,6 @@ const exportIndividualCSV = async (employee) => {
     </div>
   );
 }
+
 
 export default PayrollExport;

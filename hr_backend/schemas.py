@@ -45,6 +45,8 @@ class UserResponse(BaseModel):
     designation: Optional[str]
     supervisor_id: Optional[str]
     permissions: List[str]
+    last_login: Optional[str] = None
+    prev_login: Optional[str] = None
     
     class Config:
         from_attributes = True

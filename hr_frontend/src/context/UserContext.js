@@ -45,25 +45,26 @@ export const UserProvider = ({ children }) => {
   }, []);
 
   // Login function stores user and token
-  const login = async (userData, accessToken) => {
-    try {
-      setLoading(true);
-      setError(null);
-      localStorage.setItem('token', accessToken);
-      localStorage.setItem('user', JSON.stringify(userData));
-      setUser(userData);
-      setToken(accessToken);
-      setIsAuthenticated(true);
-      return { user: userData, access_token: accessToken };
-    } catch (err) {
-      const errorMsg = err.message || 'Login failed';
-      setError(errorMsg);
-      console.error('Login error:', err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
+const login = async (userData, accessToken) => {
+  try {
+    console.log("Login userData:", userData); // Add log here to inspect
+    setLoading(true);
+    setError(null);
+    localStorage.setItem('token', accessToken);
+    localStorage.setItem('user', JSON.stringify(userData));
+    setUser(userData);
+    setToken(accessToken);
+    setIsAuthenticated(true);
+    return { user: userData, access_token: accessToken };
+  } catch (err) {
+    const errorMsg = err.message || 'Login failed';
+    setError(errorMsg);
+    console.error('Login error:', err);
+    throw err;
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Logout clears state and localStorage
   const logout = () => {

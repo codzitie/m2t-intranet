@@ -164,7 +164,6 @@ def login_with_otp(login_data: dict, db: Session = Depends(get_db)):
     
     return {"message": "OTP sent to your email", "email": user.email, "requires_otp": True}
 
-
 @router.post("/verify-otp")
 def verify_otp(verify_data: dict, db: Session = Depends(get_db)):
     """STEP 2: Verify OTP and return JWT token"""
@@ -190,6 +189,16 @@ def verify_otp(verify_data: dict, db: Session = Depends(get_db)):
     if user.two_fa_code != otp:
         raise HTTPException(status_code=401, detail="Invalid OTP code")
     
+    # ✅ Store the PREVIOUS last_login before updating
+    previous_last_login = user.last_login
+    
+    # ✅ Update prev_login to previous last_login
+    user.prev_login = previous_last_login
+    
+    # ✅ Update last_login to current time
+    user.last_login = datetime.utcnow()
+    
+    # Clear OTP codes
     user.two_fa_code = None
     user.two_fa_code_expires = None
     db.commit()
@@ -197,7 +206,7 @@ def verify_otp(verify_data: dict, db: Session = Depends(get_db)):
     token_data = {"sub": user.id}
     access_token = create_access_token(token_data)
     
-    # ✅ ADD PERMISSIONS TO RESPONSE
+    # ✅ Return user data WITH last_login as previous login time
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -207,9 +216,13 @@ def verify_otp(verify_data: dict, db: Session = Depends(get_db)):
             "email": user.email,
             "role": user.role,
             "designation": user.designation,
-            "permissions": get_user_permissions(user.role)  # ✅ ADD THIS
+            "permissions": get_user_permissions(user.role),
+            "last_login": previous_last_login.isoformat() if previous_last_login else None,
+            "prev_login": previous_last_login.isoformat() if previous_last_login else None
         }
     }
+
+
 
 
 @router.post("/resend-otp")

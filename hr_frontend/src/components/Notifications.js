@@ -32,18 +32,32 @@ function Notifications() {
     };
   }, []);
 
-  const loadNotifications = async () => {
-    try {
-      const response = await api.getNotifications();
-      if (response) {
-        const notifs = response.notifications || [];
-        setNotifications(notifs);
-        setUnreadCount(response.unread_count || 0);
-      }
-    } catch (error) {
-      console.error('Error loading notifications:', error);
+const loadNotifications = async () => {
+  try {
+    const response = await api.getNotifications();
+    if (response) {
+      const notifs = response.notifications || [];
+
+      // Set grace period: 2 days from now
+      const twoDaysAgo = new Date();
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+      // Filter notifications from the last 2 days
+      let filteredNotifs = notifs.filter(n => new Date(n.created_at) > twoDaysAgo);
+
+      setNotifications(filteredNotifs);
+      setUnreadCount(filteredNotifs.filter(n => !n.is_read).length);
+
+      // Debug logs
+      console.log('Grace period (2 days ago):', twoDaysAgo.toISOString());
+      console.log('notifications timestamps:', notifs.map(n => n.created_at));
+      console.log('filtered notifications count:', filteredNotifs.length);
     }
-  };
+  } catch (error) {
+    console.error('Error loading notifications:', error);
+  }
+};
+
 
   const markAsRead = async (notificationId) => {
     try {

@@ -192,7 +192,8 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         department=current_user.department,
         designation=current_user.designation,
         supervisor_id=current_user.supervisor_id,
-        permissions=get_user_permissions(current_user.role)
+        permissions=get_user_permissions(current_user.role),
+        last_login=current_user.last_login.isoformat() if current_user.last_login else None
     )
 
 

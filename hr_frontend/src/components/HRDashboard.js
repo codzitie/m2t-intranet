@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import * as api from '../services/api';
+
 
 function HRDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -13,10 +15,12 @@ function HRDashboard() {
   const [selectedLeave, setSelectedLeave] = useState(null);
   const [selectedManagerId, setSelectedManagerId] = useState('');
 
+
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   const loadData = async () => {
     try {
@@ -26,6 +30,7 @@ function HRDashboard() {
         api.getEmployeeBalances(),
         api.getAllEmployees()
       ]);
+
 
       setStats(statsData || {});
       setAllRequests(requestsData || []);
@@ -39,6 +44,7 @@ function HRDashboard() {
     }
   };
 
+
   const getFilteredRequests = () => {
     let filtered = [...allRequests];
     if (filterStatus !== 'All') {
@@ -46,6 +52,7 @@ function HRDashboard() {
     }
     return filtered;
   };
+
 
   // Enhanced function to get all pending approvals (L1 + L2)
   const getPendingApprovals = () => {
@@ -55,6 +62,7 @@ function HRDashboard() {
     );
   };
 
+
   // Get managers and team leads for dropdown
   const getAvailableApprovers = () => {
     return allEmployees.filter(emp => 
@@ -62,17 +70,20 @@ function HRDashboard() {
     );
   };
 
+
   const openRedirectModal = (leave) => {
     setSelectedLeave(leave);
     setSelectedManagerId('');
     setShowRedirectModal(true);
   };
 
+
   const closeRedirectModal = () => {
     setShowRedirectModal(false);
     setSelectedLeave(null);
     setSelectedManagerId('');
   };
+
 
   const handleRedirectL1Submit = async () => {
     if (!selectedManagerId) {
@@ -88,6 +99,7 @@ function HRDashboard() {
       alert('Failed to redirect L1 approval');
     }
   };
+
 
   // Get approval stage badge
   const getApprovalStageBadge = (request) => {
@@ -121,6 +133,7 @@ function HRDashboard() {
     return null;
   };
 
+
   const exportToCSV = () => {
     const headers = ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'L1 Status', 'L2 Status', 'Applied On', 'Remarks'];
     const rows = getFilteredRequests().map(req => [
@@ -147,6 +160,66 @@ function HRDashboard() {
     a.click();
   };
 
+
+  const exportToExcel = () => {
+    try {
+      // Prepare data for Excel export
+      const filteredData = getFilteredRequests();
+      
+      if (filteredData.length === 0) {
+        alert('No data to export');
+        return;
+      }
+
+      // Create worksheet data with headers
+      const worksheetData = [
+        ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'L1 Status', 'L2 Status', 'Applied On', 'Remarks'],
+        ...filteredData.map(req => [
+          req.employee_name,
+          req.leave_type,
+          req.start_date,
+          req.end_date,
+          req.days,
+          req.status,
+          req.l1_status || 'N/A',
+          req.l2_status || 'N/A',
+          req.applied_on,
+          req.supervisor_remarks || '-'
+        ])
+      ];
+
+      // Create a new workbook and worksheet
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+      
+      // Set column widths for better readability
+      worksheet['!cols'] = [
+        { wch: 20 }, // Employee
+        { wch: 15 }, // Leave Type
+        { wch: 12 }, // Start Date
+        { wch: 12 }, // End Date
+        { wch: 8 },  // Days
+        { wch: 12 }, // Status
+        { wch: 12 }, // L1 Status
+        { wch: 12 }, // L2 Status
+        { wch: 12 }, // Applied On
+        { wch: 30 }  // Remarks
+      ];
+
+      // Append worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Leave Requests');
+
+      // Generate Excel file and trigger download
+      const fileName = `leave-requests-${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      alert('Failed to export to Excel. Please try again.');
+    }
+  };
+
+
   const getStatusBadge = (status) => {
     const styles = {
       Approved: { backgroundColor: '#D1FAE5', color: '#065F46' },
@@ -165,6 +238,7 @@ function HRDashboard() {
       </span>
     );
   };
+
 
   // Styles
   const containerStyle = { maxWidth: '1400px', margin: '0 auto', padding: '40px 20px' };
@@ -194,6 +268,8 @@ function HRDashboard() {
   const filterBarStyle = { display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' };
   const selectStyle = { padding: '8px 12px', fontSize: '14px', border: '1px solid #d1d5db', borderRadius: '6px' };
   const buttonStyle = { padding: '8px 16px', backgroundColor: '#004aad', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' };
+  const buttonStyleExcel = { padding: '8px 16px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' };
+
 
   // Modal styles
   const modalOverlayStyle = {
@@ -209,6 +285,7 @@ function HRDashboard() {
     zIndex: 1000
   };
 
+
   const modalContentStyle = {
     backgroundColor: 'white',
     borderRadius: '8px',
@@ -218,12 +295,14 @@ function HRDashboard() {
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
   };
 
+
   const modalTitleStyle = {
     fontSize: '20px',
     fontWeight: '600',
     color: '#333',
     marginBottom: '20px'
   };
+
 
   const modalLabelStyle = {
     display: 'block',
@@ -232,6 +311,7 @@ function HRDashboard() {
     color: '#555',
     marginBottom: '8px'
   };
+
 
   const modalSelectStyle = {
     width: '100%',
@@ -242,11 +322,13 @@ function HRDashboard() {
     marginBottom: '20px'
   };
 
+
   const modalButtonsStyle = {
     display: 'flex',
     gap: '10px',
     justifyContent: 'flex-end'
   };
+
 
   const modalButtonPrimaryStyle = {
     padding: '10px 20px',
@@ -259,6 +341,7 @@ function HRDashboard() {
     cursor: 'pointer'
   };
 
+
   const modalButtonSecondaryStyle = {
     padding: '10px 20px',
     backgroundColor: '#e5e7eb',
@@ -270,6 +353,7 @@ function HRDashboard() {
     cursor: 'pointer'
   };
 
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>
@@ -278,8 +362,10 @@ function HRDashboard() {
     );
   }
 
+
   const pendingApprovals = getPendingApprovals();
   const availableApprovers = getAvailableApprovers();
+
 
   return (
     <div style={containerStyle}>
@@ -288,6 +374,7 @@ function HRDashboard() {
         <h1 style={titleStyle}>HR Dashboard</h1>
         <p style={subtitleStyle}>Manage company-wide leave requests and employee balances</p>
       </div>
+
 
       {/* Tabs */}
       <div style={tabsStyle}>
@@ -301,6 +388,7 @@ function HRDashboard() {
           💼 Employee Balances
         </button>
       </div>
+
 
       {/* Tab Content */}
       {activeTab === 'overview' && stats && (
@@ -328,6 +416,7 @@ function HRDashboard() {
               <div style={statValueStyle}>{allRequests.length}</div>
             </div>
           </div>
+
 
           {/* Two Column Layout */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '20px' }}>
@@ -458,6 +547,7 @@ function HRDashboard() {
         </>
       )}
 
+
       {activeTab === 'requests' && (
         <>
           {/* Filters */}
@@ -474,6 +564,9 @@ function HRDashboard() {
             </select>
             <button style={buttonStyle} onClick={exportToCSV}>
               📥 Export to CSV
+            </button>
+            <button style={buttonStyleExcel} onClick={exportToExcel}>
+              📊 Export to Excel
             </button>
           </div>
           {/* All Requests Table */}
@@ -548,6 +641,7 @@ function HRDashboard() {
         </>
       )}
 
+
       {activeTab === 'balances' && (
         <div style={tableContainerStyle}>
           {allBalances.length > 0 ? (
@@ -604,6 +698,7 @@ function HRDashboard() {
         </div>
       )}
 
+
       {/* Redirect Modal */}
       {showRedirectModal && (
         <div style={modalOverlayStyle} onClick={closeRedirectModal}>
@@ -651,5 +746,6 @@ function HRDashboard() {
     </div>
   );
 }
+
 
 export default HRDashboard;

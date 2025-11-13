@@ -45,6 +45,8 @@ class User(Base):
     leave_balances = relationship("LeaveBalance", back_populates="user")
     leave_applications = relationship("LeaveApplication", foreign_keys="LeaveApplication.user_id", back_populates="user")
     notifications = relationship("Notification", back_populates="user")
+    last_login = Column(DateTime, default=None, nullable=True)
+    prev_login = Column(DateTime, default=None, nullable=True)
 
 
 
