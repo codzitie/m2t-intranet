@@ -164,7 +164,7 @@ class TimesheetActivity(Base):
     
     id = Column(String, primary_key=True)
     timesheet_id = Column(String, ForeignKey("timesheet_entries.id"), nullable=False, index=True)
-    slot = Column(String, nullable=False)
+    slot = Column(String, nullable=True)
     description = Column(String, nullable=False)
     output = Column(Text, nullable=True)
     start_time = Column(String, nullable=True)

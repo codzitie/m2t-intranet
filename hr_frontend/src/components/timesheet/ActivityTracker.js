@@ -9,9 +9,8 @@ function ActivityTracker() {
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
-    slot: 'morning',
     description: '',
-    start_time: '09:30',
+    start_time: '09:00',
     end_time: '10:00',
     output: '',
   });
@@ -20,25 +19,6 @@ function ActivityTracker() {
   const [editingId, setEditingId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Time slot definitions
-  const TIME_SLOTS = {
-    morning: {
-      label: '🌅 Morning (9:30 AM - 1:00 PM)',
-      startTime: '09:30',
-      endTime: '13:00',
-      color: '#FEF3C7',
-      borderColor: '#FCD34D',
-    },
-    afternoon: {
-      label: '🌄 Afternoon (2:00 PM - 6:30 PM)',
-      startTime: '14:00',
-      endTime: '18:30',
-      color: '#DBEAFE',
-      borderColor: '#0284C7',
-    },
-  };
-
-  // ✅ FETCH ACTIVITIES FROM API WHEN DATE CHANGES
   useEffect(() => {
     if (token && selectedDate) {
       fetchActivities();
@@ -59,162 +39,90 @@ function ActivityTracker() {
     }
   };
 
-  // ✅ TODAY AND YESTERDAY CAN EDIT - OTHERS READ ONLY
+  // Editable only for today and yesterday
   const isEditableDate = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
     const selected = new Date(selectedDate);
     selected.setHours(0, 0, 0, 0);
-
-    return selected.toDateString() === today.toDateString() || 
-           selected.toDateString() === yesterday.toDateString();
+    return selected.toDateString() === today.toDateString() || selected.toDateString() === yesterday.toDateString();
   };
 
-  // Get activity status
-  const getActivityStatus = (activityDate) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const actDate = new Date(activityDate);
-    actDate.setHours(0, 0, 0, 0);
-
-    if (actDate.toDateString() === today.toDateString()) {
-      return { 
-        label: '✏️ Editable', 
-        color: '#D1FAE5',
-        borderColor: '#6EE7B7',
-      };
+  // Prevent duplicate/overlapping time slots
+  const hasOverlap = (start, end) => {
+    const s1 = timeToMinutes(start);
+    const e1 = timeToMinutes(end);
+    for (const act of activities) {
+      if (editingId && act.id === editingId) continue;
+      const s2 = timeToMinutes(act.start_time);
+      const e2 = timeToMinutes(act.end_time);
+      // If times overlap
+      if ((s1 < e2 && e1 > s2)) {
+        return true;
+      }
     }
-
-    if (actDate.toDateString() === yesterday.toDateString()) {
-      return { 
-        label: '✏️ Editable', 
-        color: '#D1FAE5',
-        borderColor: '#6EE7B7',
-      };
-    }
-
-    return { 
-      label: '🔒 View Only', 
-      color: '#FEE2E2',
-      borderColor: '#FECACA',
-    };
+    return false;
   };
 
-  // Get activities for selected date
-  const getTodaysActivities = () => {
-    return activities;
-  };
-
-  // Get activities by slot
-  const getActivitiesBySlot = (slot) => {
-    return activities.filter(a => a.slot === slot);
-  };
-
-  // Calculate total activity time
-  const calculateTotalActivityTime = () => {
-    let totalMinutes = 0;
-
-    activities.forEach(activity => {
-      const startMins = timeToMinutes(activity.start_time);
-      const endMins = timeToMinutes(activity.end_time);
-      totalMinutes += (endMins - startMins);
-    });
-
-    return (totalMinutes / 60).toFixed(2);
-  };
-
-  // Convert time string to minutes
-  const timeToMinutes = (timeStr) => {
-    const [hours, mins] = timeStr.split(':').map(Number);
-    return hours * 60 + mins;
-  };
-
-  // Check if time is within slot
-  const isTimeInSlot = (slot, startTime, endTime) => {
-    const slotStart = timeToMinutes(TIME_SLOTS[slot].startTime);
-    const slotEnd = timeToMinutes(TIME_SLOTS[slot].endTime);
-    const actStart = timeToMinutes(startTime);
-    const actEnd = timeToMinutes(endTime);
-
-    return actStart >= slotStart && actEnd <= slotEnd && actStart < actEnd;
-  };
-
-  // ✅ VALIDATE FORM
   const validateForm = () => {
     const newErrors = {};
 
     if (!formData.description.trim()) {
       newErrors.description = 'Activity description is required';
     }
-
     if (formData.description.length < 5) {
       newErrors.description = 'Description must be at least 5 characters';
     }
-
     if (!formData.output.trim()) {
       newErrors.output = 'Output is required';
     }
-
-    if (!isTimeInSlot(formData.slot, formData.start_time, formData.end_time)) {
-      const slot = TIME_SLOTS[formData.slot];
-      newErrors.time = `Time must be within ${slot.label}`;
+    if (!isValidTime(formData.start_time) || !isValidTime(formData.end_time)) {
+      newErrors.time = 'Please enter valid start and end times in 24-hour format (HH:MM)';
     }
-
     if (formData.start_time >= formData.end_time) {
       newErrors.time = 'End time must be after start time';
+    }
+    if (hasOverlap(formData.start_time, formData.end_time)) {
+      newErrors.time = 'Activity overlaps with another entry.';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // ✅ HANDLE ADD/UPDATE - NOW SAVES TO DATABASE
+  // Validate 24-hour time format: HH:MM
+  const isValidTime = (time) => {
+    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(time);
+  };
+
   const handleSaveActivity = async () => {
     if (!validateForm()) {
       return;
     }
-
     if (!isEditableDate()) {
       alert('Cannot add activities for past dates. Only today and yesterday are allowed.');
       return;
     }
-
     setSubmitting(true);
-
     try {
       const payload = {
         date: selectedDate,
-        slot: formData.slot,
         description: formData.description,
         output: formData.output,
         start_time: formData.start_time,
         end_time: formData.end_time,
       };
-
       if (editingId) {
-        // ✅ UPDATE EXISTING ACTIVITY
         await timesheetService.updateActivity(token, editingId, payload);
       } else {
-        // ✅ CREATE NEW ACTIVITY
         await timesheetService.createActivity(token, payload);
       }
-
-      // ✅ REFRESH ACTIVITIES FROM API
       await fetchActivities();
-
-      // Reset form
       setFormData({
-        slot: 'morning',
         description: '',
-        start_time: '09:30',
+        start_time: '09:00',
         end_time: '10:00',
         output: '',
       });
@@ -230,7 +138,6 @@ function ActivityTracker() {
 
   const handleEdit = (activity) => {
     setFormData({
-      slot: activity.slot,
       description: activity.description,
       start_time: activity.start_time,
       end_time: activity.end_time,
@@ -242,17 +149,12 @@ function ActivityTracker() {
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this activity?')) {
       try {
-        // ✅ DELETE FROM DATABASE
         await timesheetService.deleteActivity(token, id);
-        
-        // ✅ REFRESH ACTIVITIES
         await fetchActivities();
-        
         if (editingId === id) {
           setFormData({
-            slot: 'morning',
             description: '',
-            start_time: '09:30',
+            start_time: '09:00',
             end_time: '10:00',
             output: '',
           });
@@ -267,9 +169,8 @@ function ActivityTracker() {
 
   const handleCancel = () => {
     setFormData({
-      slot: 'morning',
       description: '',
-      start_time: '09:30',
+      start_time: '09:00',
       end_time: '10:00',
       output: '',
     });
@@ -277,7 +178,31 @@ function ActivityTracker() {
     setErrors({});
   };
 
-  // Styles (same as before)
+  // Calculate total logged time for summary
+  const calculateTotalActivityTime = () => {
+    let totalMinutes = 0;
+    activities.forEach((activity) => {
+      const startMins = timeToMinutes(activity.start_time);
+      const endMins = timeToMinutes(activity.end_time);
+      totalMinutes += endMins - startMins;
+    });
+    return (totalMinutes / 60).toFixed(2);
+  };
+
+  const timeToMinutes = (timeStr) => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  // Formatting time for 24-hour display, removing leading zeros for aesthetics if desired
+  const format24HrTime = (time) => {
+    if (!time) return '';
+    const [hrs, mins] = time.split(':');
+    return `${hrs.padStart(2, '0')}:${mins}`;
+  };
+
+  // Styles preserved as before...
+
   const containerStyle = {
     backgroundColor: 'white',
     border: '1px solid #e5e7eb',
@@ -338,15 +263,6 @@ function ActivityTracker() {
     marginBottom: '8px',
   };
 
-  const selectStyle = {
-    width: '100%',
-    padding: '10px 12px',
-    fontSize: '14px',
-    border: errors.slot ? '2px solid #EF4444' : '1px solid #d1d5db',
-    borderRadius: '6px',
-    boxSizing: 'border-box',
-  };
-
   const inputStyle = {
     width: '100%',
     padding: '10px 12px',
@@ -366,21 +282,6 @@ function ActivityTracker() {
     resize: 'vertical',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
-  };
-
-  const timeGridStyle = {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px',
-    marginBottom: '16px',
-  };
-
-  const slotInfoStyle = {
-    padding: '12px',
-    borderRadius: '6px',
-    fontSize: '12px',
-    fontWeight: '500',
-    marginBottom: '12px',
   };
 
   const errorMessageStyle = {
@@ -452,69 +353,36 @@ function ActivityTracker() {
     color: '#004aad',
   };
 
-  const slotContainerStyle = {
+  const tableStyle = {
+    width: '100%',
+    borderCollapse: 'collapse',
     marginBottom: '24px',
   };
 
-  const slotHeaderStyle = {
-    fontSize: '16px',
+  const thStyle = {
+    border: '1px solid #d1d5db',
+    padding: '10px',
+    backgroundColor: '#f3f4f6',
+    textAlign: 'left',
     fontWeight: '600',
     color: '#333',
-    marginBottom: '12px',
-    paddingBottom: '8px',
-    borderBottom: '2px solid #e5e7eb',
   };
 
-  const activityCardStyle = (status) => ({
-    backgroundColor: status.color,
-    border: `2px solid ${status.borderColor}`,
-    borderRadius: '8px',
-    padding: '16px',
-    marginBottom: '12px',
-    transition: 'all 0.3s ease',
-  });
-
-  const statusBadgeStyle = (status) => ({
-    display: 'inline-block',
-    padding: '6px 12px',
-    backgroundColor: status.color,
-    border: `1px solid ${status.borderColor}`,
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '500',
-    marginBottom: '12px',
-  });
-
-  const activityTimeStyle = {
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: '8px',
-  };
-
-  const activityDescriptionStyle = {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: '8px',
-  };
-
-  const activityOutputStyle = {
-    fontSize: '13px',
+  const tdStyle = {
+    border: '1px solid #d1d5db',
+    padding: '12px',
+    verticalAlign: 'top',
+    fontSize: '14px',
     color: '#555',
-    marginBottom: '12px',
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    padding: '8px',
-    borderRadius: '4px',
   };
 
   const actionButtonsStyle = {
     display: 'flex',
     gap: '8px',
+    justifyContent: 'flex-start',
   };
 
   const editButtonStyle = {
-    flex: 1,
     padding: '6px 12px',
     backgroundColor: '#004aad',
     color: 'white',
@@ -527,7 +395,6 @@ function ActivityTracker() {
   };
 
   const deleteButtonStyle = {
-    flex: 1,
     padding: '6px 12px',
     backgroundColor: '#EF4444',
     color: 'white',
@@ -600,72 +467,64 @@ function ActivityTracker() {
           {editingId ? '✏️ Edit Activity' : '➕ Add New Activity'}
         </h3>
 
-        {/* Slot Selection */}
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Select Time Slot *</label>
-          <select
-            value={formData.slot}
-            onChange={(e) => setFormData({ ...formData, slot: e.target.value })}
-            style={selectStyle}
-          >
-            {Object.entries(TIME_SLOTS).map(([key, slot]) => (
-              <option key={key} value={key}>
-                {slot.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Slot Info */}
-        <div
-          style={{
-            ...slotInfoStyle,
-            backgroundColor: TIME_SLOTS[formData.slot].color,
-            borderLeft: `4px solid ${TIME_SLOTS[formData.slot].borderColor}`,
-          }}
-        >
-          {TIME_SLOTS[formData.slot].label}
-        </div>
-
         {/* Time Range */}
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Time Range *</label>
-          <div style={timeGridStyle}>
-            <div>
-              <label style={{ fontSize: '12px', color: '#666', marginBottom: '4px', display: 'block' }}>
-                Start Time
-              </label>
-              <input
-                type="time"
-                value={formData.start_time}
-                onChange={(e) => {
-                  setFormData({ ...formData, start_time: e.target.value });
-                  setErrors({});
-                }}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', color: '#666', marginBottom: '4px', display: 'block' }}>
-                End Time
-              </label>
-              <input
-                type="time"
-                value={formData.end_time}
-                onChange={(e) => {
-                  setFormData({ ...formData, end_time: e.target.value });
-                  setErrors({});
-                }}
-                style={inputStyle}
-              />
-            </div>
-          </div>
-          {errors.time && (
-            <div style={errorMessageStyle}>
-              ⚠️ {errors.time}
-            </div>
-          )}
-        </div>
+        {/* Time Range */}
+<div style={formGroupStyle}>
+  <label style={labelStyle}>Time Range (24-hour format: HH:MM) *</label>
+  <div style={{ display: 'flex', gap: '12px' }}>
+    <input
+      type="text"
+      value={formData.start_time}
+      placeholder="09:00"
+      maxLength="5"
+      onChange={(e) => {
+        let value = e.target.value.replace(/[^0-9:]/g, '');
+        if (value.length === 2 && !value.includes(':')) {
+          value = value + ':';
+        }
+        setFormData({ ...formData, start_time: value });
+        setErrors({});
+      }}
+      onBlur={(e) => {
+        // Auto-format on blur
+        const val = e.target.value;
+        if (val.length === 5 && isValidTime(val)) {
+          setFormData({ ...formData, start_time: val });
+        }
+      }}
+      style={inputStyle}
+    />
+    <input
+      type="text"
+      value={formData.end_time}
+      placeholder="18:00"
+      maxLength="5"
+      onChange={(e) => {
+        let value = e.target.value.replace(/[^0-9:]/g, '');
+        if (value.length === 2 && !value.includes(':')) {
+          value = value + ':';
+        }
+        setFormData({ ...formData, end_time: value });
+        setErrors({});
+      }}
+      onBlur={(e) => {
+        const val = e.target.value;
+        if (val.length === 5 && isValidTime(val)) {
+          setFormData({ ...formData, end_time: val });
+        }
+      }}
+      style={inputStyle}
+    />
+  </div>
+  <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+    Format: HH:MM (e.g., 09:00, 14:30, 18:00)
+  </div>
+  {errors.time && (
+    <div style={errorMessageStyle}>
+      ⚠️ {errors.time}
+    </div>
+  )}
+</div>
 
         {/* Description */}
         <div style={formGroupStyle}>
@@ -737,11 +596,11 @@ function ActivityTracker() {
       </div>
 
       {/* Summary Card */}
-      {getTodaysActivities().length > 0 && (
+      {activities.length > 0 && (
         <div style={summaryCardStyle}>
           <div style={summaryItemStyle}>
             <div style={summaryLabelStyle}>Total Activities</div>
-            <div style={summaryValueStyle}>{getTodaysActivities().length}</div>
+            <div style={summaryValueStyle}>{activities.length}</div>
           </div>
           <div style={summaryItemStyle}>
             <div style={summaryLabelStyle}>Total Time Logged</div>
@@ -756,155 +615,60 @@ function ActivityTracker() {
         </div>
       )}
 
-      {/* Activities List */}
-      <div>
-        {getTodaysActivities().length === 0 ? (
-          <div style={emptyStateStyle}>
-            <div style={{ fontSize: '48px', marginBottom: '12px' }}>📝</div>
-            <p>No activities logged for this day</p>
-          </div>
-        ) : (
-          <>
-            {/* Morning Slot */}
-            <div style={slotContainerStyle}>
-              <div style={slotHeaderStyle}>
-                🌅 Morning Activities ({getActivitiesBySlot('morning').length})
-              </div>
-              {getActivitiesBySlot('morning').length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#9CA3AF', padding: '20px' }}>
-                  No activities in morning slot
-                </div>
-              ) : (
-                getActivitiesBySlot('morning').map(activity => {
-                  const status = getActivityStatus(activity.date);
-                  return (
-                    <div
-                      key={activity.id}
-                      style={activityCardStyle(status)}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
+      {/* Activities Table */}
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={thStyle}>Start Time (24-hr)</th>
+            <th style={thStyle}>End Time (24-hr)</th>
+            <th style={thStyle}>Activity Description</th>
+            <th style={thStyle}>Output / Deliverable</th>
+            <th style={thStyle}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {activities.length === 0 ? (
+            <tr>
+              <td colSpan="5" style={{ ...tdStyle, textAlign: 'center', color: '#9CA3AF' }}>
+                No activities logged for this day
+              </td>
+            </tr>
+          ) : (
+            activities.map(activity => (
+              <tr key={activity.id}>
+                <td style={tdStyle}>{format24HrTime(activity.start_time)}</td>
+                <td style={tdStyle}>{format24HrTime(activity.end_time)}</td>
+                <td style={tdStyle}>{activity.description}</td>
+                <td style={tdStyle}>{activity.output}</td>
+                <td style={tdStyle}>
+                  <div style={actionButtonsStyle}>
+                    <button
+                      style={{ ...editButtonStyle, ...(isEditableDate() ? {} : disabledButtonStyle) }}
+                      onClick={() => handleEdit(activity)}
+                      disabled={!isEditableDate()}
+                      title={isEditableDate() ? 'Edit activity' : 'Cannot edit past activities'}
+                      onMouseEnter={(e) => isEditableDate() && (e.target.style.backgroundColor = '#003380')}
+                      onMouseLeave={(e) => isEditableDate() && (e.target.style.backgroundColor = '#004aad')}
                     >
-                      <div style={statusBadgeStyle(status)}>
-                        {status.label}
-                      </div>
-                      <div style={activityTimeStyle}>
-                        🕐 {activity.start_time} - {activity.end_time}
-                      </div>
-                      <div style={activityDescriptionStyle}>
-                        {activity.description}
-                      </div>
-                      <div style={activityOutputStyle}>
-                        <strong>Output:</strong> {activity.output}
-                      </div>
-                      <div style={actionButtonsStyle}>
-                        <button
-                          style={{
-                            ...editButtonStyle,
-                            ...(isEditableDate() ? {} : disabledButtonStyle)
-                          }}
-                          onClick={() => handleEdit(activity)}
-                          disabled={!isEditableDate()}
-                          title={isEditableDate() ? 'Edit activity' : 'Cannot edit past activities'}
-                          onMouseEnter={(e) => isEditableDate() && (e.target.style.backgroundColor = '#003380')}
-                          onMouseLeave={(e) => isEditableDate() && (e.target.style.backgroundColor = '#004aad')}
-                        >
-                          ✏️ Edit
-                        </button>
-                        <button
-                          style={{
-                            ...deleteButtonStyle,
-                            ...(isEditableDate() ? {} : disabledButtonStyle)
-                          }}
-                          onClick={() => handleDelete(activity.id)}
-                          disabled={!isEditableDate()}
-                          title={isEditableDate() ? 'Delete activity' : 'Cannot delete past activities'}
-                          onMouseEnter={(e) => isEditableDate() && (e.target.style.backgroundColor = '#DC2626')}
-                          onMouseLeave={(e) => isEditableDate() && (e.target.style.backgroundColor = '#EF4444')}
-                        >
-                          🗑️ Delete
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Afternoon Slot */}
-            <div style={slotContainerStyle}>
-              <div style={slotHeaderStyle}>
-                🌄 Afternoon Activities ({getActivitiesBySlot('afternoon').length})
-              </div>
-              {getActivitiesBySlot('afternoon').length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#9CA3AF', padding: '20px' }}>
-                  No activities in afternoon slot
-                </div>
-              ) : (
-                getActivitiesBySlot('afternoon').map(activity => {
-                  const status = getActivityStatus(activity.date);
-                  return (
-                    <div
-                      key={activity.id}
-                      style={activityCardStyle(status)}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
+                      ✏️ Edit
+                    </button>
+                    <button
+                      style={{ ...deleteButtonStyle, ...(isEditableDate() ? {} : disabledButtonStyle) }}
+                      onClick={() => handleDelete(activity.id)}
+                      disabled={!isEditableDate()}
+                      title={isEditableDate() ? 'Delete activity' : 'Cannot delete past activities'}
+                      onMouseEnter={(e) => isEditableDate() && (e.target.style.backgroundColor = '#DC2626')}
+                      onMouseLeave={(e) => isEditableDate() && (e.target.style.backgroundColor = '#EF4444')}
                     >
-                      <div style={statusBadgeStyle(status)}>
-                        {status.label}
-                      </div>
-                      <div style={activityTimeStyle}>
-                        🕐 {activity.start_time} - {activity.end_time}
-                      </div>
-                      <div style={activityDescriptionStyle}>
-                        {activity.description}
-                      </div>
-                      <div style={activityOutputStyle}>
-                        <strong>Output:</strong> {activity.output}
-                      </div>
-                      <div style={actionButtonsStyle}>
-                        <button
-                          style={{
-                            ...editButtonStyle,
-                            ...(isEditableDate() ? {} : disabledButtonStyle)
-                          }}
-                          onClick={() => handleEdit(activity)}
-                          disabled={!isEditableDate()}
-                          title={isEditableDate() ? 'Edit activity' : 'Cannot edit past activities'}
-                          onMouseEnter={(e) => isEditableDate() && (e.target.style.backgroundColor = '#003380')}
-                          onMouseLeave={(e) => isEditableDate() && (e.target.style.backgroundColor = '#004aad')}
-                        >
-                          ✏️ Edit
-                        </button>
-                        <button
-                          style={{
-                            ...deleteButtonStyle,
-                            ...(isEditableDate() ? {} : disabledButtonStyle)
-                          }}
-                          onClick={() => handleDelete(activity.id)}
-                          disabled={!isEditableDate()}
-                          title={isEditableDate() ? 'Delete activity' : 'Cannot delete past activities'}
-                          onMouseEnter={(e) => isEditableDate() && (e.target.style.backgroundColor = '#DC2626')}
-                          onMouseLeave={(e) => isEditableDate() && (e.target.style.backgroundColor = '#EF4444')}
-                        >
-                          🗑️ Delete
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </>
-        )}
-      </div>
+                      🗑️ Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
