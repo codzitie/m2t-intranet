@@ -9,23 +9,24 @@ from database import (
 )
 from auth import get_current_user, hash_password
 from pydantic import BaseModel, EmailStr
+from email_service import send_new_user_credentials
 import uuid
+import secrets
+import string
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
-
 
 # ============= SCHEMAS =============
 
 class CreateUserRequest(BaseModel):
     email: EmailStr
     name: str
-    password: str
     role: str
     department: str
     designation: str
     supervisor_id: str | None = None
     join_date: str | None = None
-
+    # Password field removed - auto-generated now
 
 class UserResponse(BaseModel):
     id: str
@@ -36,7 +37,6 @@ class UserResponse(BaseModel):
     designation: str
     supervisor_id: str | None
     join_date: str
-
 
 class UnlockRequestResponse(BaseModel):
     id: str
@@ -52,11 +52,9 @@ class UnlockRequestResponse(BaseModel):
     approved_by: str | None
     remarks: str | None
 
-
 class ReviewUnlockRequest(BaseModel):
     status: str  # 'approved' or 'rejected'
     remarks: str
-
 
 # ============= MIDDLEWARE =============
 
@@ -69,6 +67,32 @@ def require_admin(current_user: User = Depends(get_current_user)):
         )
     return current_user
 
+# ============= UTILITY: GENERATE SECURE PASSWORD =============
+
+def generate_secure_password(length: int = 12) -> str:
+    """Generate a secure random password"""
+    # Ensure at least one of each type
+    lowercase = string.ascii_lowercase
+    uppercase = string.ascii_uppercase
+    digits = string.digits
+    special = "!@#$%^&*"
+    
+    # Pick one of each to ensure requirements
+    password = [
+        secrets.choice(lowercase),
+        secrets.choice(uppercase),
+        secrets.choice(digits),
+        secrets.choice(special)
+    ]
+    
+    # Fill the rest randomly
+    all_chars = lowercase + uppercase + digits + special
+    password += [secrets.choice(all_chars) for _ in range(length - 4)]
+    
+    # Shuffle to avoid predictable pattern
+    secrets.SystemRandom().shuffle(password)
+    
+    return ''.join(password)
 
 # ============= CREATE USER =============
 
@@ -78,7 +102,7 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """Create a new user (Admin only)"""
+    """Create a new user with auto-generated password (Admin only)"""
     
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == data.email).first()
@@ -97,12 +121,15 @@ def create_user(
                 detail="Supervisor not found"
             )
     
+    # Generate secure temporary password
+    temporary_password = generate_secure_password(12)
+    
     # Create new user
     new_user = User(
         id=str(uuid.uuid4()),
         email=data.email,
         name=data.name,
-        password_hash=hash_password(data.password),
+        password_hash=hash_password(temporary_password),
         role=data.role,
         department=data.department,
         designation=data.designation,
@@ -129,6 +156,20 @@ def create_user(
     
     db.commit()
     
+    # Send welcome email with credentials
+    try:
+        send_new_user_credentials(
+            email=new_user.email,
+            username=new_user.name,
+            temporary_password=temporary_password,
+            role=new_user.role,
+            department=new_user.department
+        )
+        print(f"✅ Welcome email sent to {new_user.email}")
+    except Exception as e:
+        print(f"⚠️ Failed to send welcome email: {e}")
+        # Don't fail user creation if email fails - password is in console fallback
+    
     return UserResponse(
         id=new_user.id,
         email=new_user.email,
@@ -139,7 +180,6 @@ def create_user(
         supervisor_id=new_user.supervisor_id,
         join_date=str(new_user.join_date)
     )
-
 
 # ============= GET ALL USERS =============
 
@@ -164,7 +204,6 @@ def get_all_users(
         )
         for user in users
     ]
-
 
 # ============= GET POTENTIAL SUPERVISORS =============
 
@@ -191,7 +230,6 @@ def get_potential_supervisors(
         )
         for user in supervisors
     ]
-
 
 # ============= GET UNLOCK REQUESTS (ADMIN VIEW) =============
 
@@ -229,7 +267,6 @@ def get_all_unlock_requests(
         ))
     
     return result
-
 
 # ============= ADMIN DASHBOARD STATS =============
 

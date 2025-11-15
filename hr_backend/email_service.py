@@ -317,3 +317,162 @@ def send_password_reset_otp(email: str, otp_code: str, username: str) -> bool:
         print(f"⚠️ Email failed: {e}")
         print(f"\n🔐 Password Reset OTP (Fallback): {otp_code}\n")
         return True
+
+
+
+def send_new_user_credentials(
+    email: str,
+    username: str,
+    temporary_password: str,
+    role: str,
+    department: str = None
+) -> bool:
+    """
+    Send welcome email with auto-generated temporary password to new user
+    
+    Args:
+        email: User's email
+        username: User's full name
+        temporary_password: Auto-generated temporary password
+        role: User's role (Employee, Manager, etc.)
+        department: User's department (optional)
+    """
+    
+    dept_info = f" • {department}" if department else ""
+    
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f5f7fa;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+            <td align="center" style="padding:40px 20px;">
+                <table width="560px" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(37,99,235,0.08);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background:linear-gradient(135deg,#10b981,#059669);padding:32px;text-align:center;border-radius:12px 12px 0 0;">
+                            <div style="font-size:42px;margin-bottom:8px;">🎉</div>
+                            <h1 style="margin:0;color:#fff;font-size:20px;font-weight:700;">Welcome to M2T HR Portal!</h1>
+                            <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">Your account has been created</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding:32px 28px;">
+                            <h2 style="margin:0 0 6px;color:#1e293b;font-size:18px;">Hello {username},</h2>
+                            <p style="margin:0 0 24px;color:#64748b;font-size:14px;">Your account has been successfully created. Below are your login credentials:</p>
+                            
+                            <!-- Credentials Card -->
+                            <div style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1.5px solid #86efac;border-radius:10px;padding:20px;margin-bottom:24px;">
+                                <table width="100%" cellpadding="8" cellspacing="0">
+                                    <tr>
+                                        <td style="color:#64748b;font-size:13px;font-weight:700;text-transform:uppercase;padding:4px 0;">Email</td>
+                                        <td style="color:#1e293b;font-size:15px;font-weight:600;text-align:right;padding:4px 0;">{email}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="color:#64748b;font-size:13px;font-weight:700;text-transform:uppercase;padding:4px 0;">Role</td>
+                                        <td style="color:#1e293b;font-size:15px;font-weight:600;text-align:right;padding:4px 0;">{role}{dept_info}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2" style="padding:12px 0 8px;">
+                                            <div style="border-top:1px dashed #86efac;"></div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="color:#64748b;font-size:13px;font-weight:700;text-transform:uppercase;padding:4px 0;">Temporary Password</td>
+                                        <td style="text-align:right;padding:4px 0;">
+                                            <div style="background:#fff;border:1.5px solid #10b981;border-radius:6px;padding:8px 12px;display:inline-block;">
+                                                <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#059669;letter-spacing:1px;">{temporary_password}</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            
+                            <!-- Important Instructions -->
+                            <div style="background:#fff7ed;border-left:3px solid #f59e0b;padding:16px;border-radius:6px;margin-bottom:20px;">
+                                <p style="margin:0 0 12px;color:#92400e;font-size:14px;font-weight:700;">⚠️ Important Security Instructions:</p>
+                                <table style="margin:0;color:#78350f;font-size:13px;line-height:1.8;">
+                                    <tr>
+                                        <td style="vertical-align:top;padding:2px 8px 2px 0;">1.</td>
+                                        <td style="padding:2px 0;">This is a <strong>temporary password</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="vertical-align:top;padding:2px 8px 2px 0;">2.</td>
+                                        <td style="padding:2px 0;">You will be required to <strong>change your password</strong> on first login</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="vertical-align:top;padding:2px 8px 2px 0;">3.</td>
+                                        <td style="padding:2px 0;">Keep this password <strong>confidential</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="vertical-align:top;padding:2px 8px 2px 0;">4.</td>
+                                        <td style="padding:2px 0;">Do not share your credentials with anyone</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            
+                            <!-- Login CTA -->
+                            <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:20px;text-align:center;">
+                                <p style="margin:0 0 12px;color:#1e40af;font-size:14px;font-weight:700;">Ready to get started?</p>
+                                <p style="margin:0 0 16px;color:#3b82f6;font-size:13px;">
+                                    Log in to the HR Portal with your credentials above
+                                </p>
+                                <a href="http://localhost:3000/login" style="display:inline-block;background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;">
+                                    🔐 Login to Portal
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background:#f8fafc;padding:24px 28px;border-top:1px solid #e2e8f0;text-align:center;border-radius:0 0 12px 12px;">
+                            <p style="margin:0 0 8px;color:#64748b;font-size:12px;">Need help? Contact HR at <a href="mailto:hr@m2t-ai.com" style="color:#2563eb;text-decoration:none;">hr@m2t-ai.com</a></p>
+                            <p style="margin:0;color:#94a3b8;font-size:11px;">© 2025 M2T HR Portal. All rights reserved.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+    """
+    
+    # Fallback to console if SMTP not configured
+    if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASS]):
+        print(f"\n{'='*60}")
+        print(f"🎉 NEW USER CREDENTIALS (Console Fallback)")
+        print(f"{'='*60}")
+        print(f"To: {email}")
+        print(f"User: {username}")
+        print(f"Role: {role}{dept_info}")
+        print(f"\n🔑 TEMPORARY PASSWORD: {temporary_password}\n")
+        print(f"⚠️  User must change password on first login")
+        print(f"{'='*60}\n")
+        return True
+    
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🎉 Welcome to M2T HR Portal - Your Account is Ready"
+        msg["From"] = f"M2T HR Portal <{settings.SMTP_FROM}>"
+        msg["To"] = email
+        
+        msg.attach(MIMEText(html_body, "html"))
+        
+        server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
+        server.starttls()
+        server.login(settings.SMTP_USER, settings.SMTP_PASS)
+        server.sendmail(settings.SMTP_FROM, [email], msg.as_string())
+        server.quit()
+        
+        print(f"✅ Welcome email with credentials sent to {email}")
+        print(f"   Temporary password: {temporary_password}")
+        return True
+        
+    except Exception as e:
+        print(f"⚠️ Email failed: {e}")
+        print(f"\n🎉 New User Credentials (Fallback): {username} - {temporary_password}\n")
+        return True
