@@ -10,6 +10,10 @@ export default function UserList() {
   const [editingUser, setEditingUser] = useState(null);
   const [editFormData, setEditFormData] = useState({});
 
+  // Deletion request modal state
+  const [deletingUser, setDeletingUser] = useState(null);
+  const [deletionReason, setDeletionReason] = useState('');
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -62,18 +66,30 @@ export default function UserList() {
     return colors[role] || '#64748b';
   };
 
-  // Delete user
-  const deleteUser = async (userId) => {
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
+  // Open deletion modal
+  const openDeletionModal = (user) => {
+    setDeletingUser(user);
+    setDeletionReason('');
+  };
+
+  // Submit deletion request
+  const submitDeletionRequest = async () => {
+    if (!deletionReason.trim()) {
+      alert('Please provide a reason for deletion');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:8000/api/admin/users/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert('User deleted successfully');
-      fetchUsers();
+      await axios.post('http://localhost:8000/api/admin/user-deletion-requests', 
+        { user_id: deletingUser.id, reason: deletionReason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('✅ User deletion request submitted successfully! Awaiting manager approval.');
+      setDeletingUser(null);
+      setDeletionReason('');
     } catch (error) {
-      alert('Failed to delete user');
+      alert(error.response?.data?.detail || 'Failed to submit deletion request');
     }
   };
 
@@ -298,26 +314,128 @@ export default function UserList() {
                         color: 'white',
                         border: 'none',
                         borderRadius: '6px',
-                        padding: '4px 8px',
-                        cursor: 'pointer'
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: '600'
                       }}>
-                        Edit
+                        ✏️ Edit
                       </button>
-                      <button onClick={() => deleteUser(user.id)} style={{
+                      <button onClick={() => openDeletionModal(user)} style={{
                         backgroundColor: '#ef4444',
                         color: 'white',
                         border: 'none',
                         borderRadius: '6px',
-                        padding: '4px 8px',
-                        cursor: 'pointer'
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: '600'
                       }}>
-                        Delete
+                        🗑️ Request Delete
                       </button>
                     </TableCell>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Request Modal */}
+      {deletingUser && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'white',
+            padding: '24px',
+            borderRadius: '12px',
+            width: '450px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+          }}>
+            <h2 style={{ margin: '0 0 16px', color: '#1e293b', fontSize: '20px', fontWeight: '700' }}>
+              🗑️ Request User Deletion
+            </h2>
+            
+            <div style={{
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '20px'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px', color: '#991b1b' }}>
+                <strong>User:</strong> {deletingUser.name} ({deletingUser.email})
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                Reason for Deletion <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <textarea
+                value={deletionReason}
+                onChange={(e) => setDeletionReason(e.target.value)}
+                placeholder="Please provide a detailed reason for requesting this user's deletion..."
+                rows="4"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  transition: 'border 0.2s'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#ef4444'}
+                onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', gap: '12px' }}>
+              <button 
+                onClick={() => {
+                  setDeletingUser(null);
+                  setDeletionReason('');
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#64748b',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={submitDeletionRequest}
+                style={{
+                  padding: '8px 16px',
+                  background: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                Submit Request
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -378,7 +496,7 @@ export default function UserList() {
             {/* Supervisor Dropdown */}
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>
-                Supervisor <span style={{ color: '#ef4444' }}>*</span>
+                Supervisor
               </label>
               <select
                 name="supervisor_id"

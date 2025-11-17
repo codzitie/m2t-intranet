@@ -223,7 +223,7 @@ class UserCreationRequest(Base):
     department = Column(String)
     designation = Column(String)
     supervisor_id = Column(String, ForeignKey('users.id'))
-    join_date = Column(Date)
+    join_date = Column(Date)    
     
     # Approval workflow
     status = Column(String, default='pending')
@@ -236,6 +236,29 @@ class UserCreationRequest(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class UserDeletionRequest(Base):
+    __tablename__ = "user_deletion_requests"
+    
+    id = Column(String, primary_key=True)
+    requested_by = Column(String, ForeignKey('users.id'), nullable=False)
+    requested_by_name = Column(String, nullable=False)
+    
+    # User to be deleted - NO FOREIGN KEY to prevent cascade deletion
+    user_id = Column(String, nullable=False)  # Removed ForeignKey
+    user_name = Column(String, nullable=False)
+    user_email = Column(String, nullable=False)
+    reason = Column(Text, nullable=True)
+    
+    # Approval workflow
+    status = Column(String, default='pending')
+    approver_id = Column(String, ForeignKey('users.id'))
+    approver_name = Column(String)
+    approved_on = Column(DateTime)
+    rejection_remarks = Column(Text)
+    
+    # Audit
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Create all tables
 def init_db():

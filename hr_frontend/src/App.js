@@ -12,7 +12,8 @@ import TimesheetDashboard from "./components/timesheet/TimesheetDashboard";
 import AdminDashboard from "./components/admin/AdminDashboard"; 
 import CEODashboard from "./components/CEODashboard"; 
 import ForgotPassword from './components/ForgotPassword';
-import UserRequestsList from './components/admin/UserRequestsList';
+import ManagerRequests from './components/admin/ManagerRequests';
+import UserDeletionHistory from './components/admin/UserDeletionHistory';
 
 function PlaceholderPage({ title }) {
   return (
@@ -42,7 +43,7 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-// ✅ ADD THIS - Admin Route Component (Only Admin/HR/CEO)
+// Admin Route Component (Only Admin/HR/CEO)
 function AdminRoute({ children }) {
   const { isAuthenticated, loading, user } = useUser();
 
@@ -68,6 +69,32 @@ function AdminRoute({ children }) {
   return children;
 }
 
+// Manager Route Component (Manager and above)
+function ManagerRoute({ children }) {
+  const { isAuthenticated, loading, user } = useUser();
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "100px", fontSize: "18px", color: "#666" }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Check if user has manager access
+  const isManager = user && ['Manager', 'Team Lead', 'CEO', 'HR', 'Founder'].includes(user.role);
+  
+  if (!isManager) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
 function AppRoutes() {
   const { isAuthenticated } = useUser();
 
@@ -77,8 +104,9 @@ function AppRoutes() {
       {isAuthenticated && <Header />}
       
       <Routes>
-        {/* Login Route - Always accessible */}
+        {/* Public Routes */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
         {/* Protected Routes */}
         <Route 
@@ -107,8 +135,15 @@ function AppRoutes() {
             </ProtectedRoute>
           } 
         />
-        <Route path="/admin/user-requests" element={<UserRequestsList />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
+
+        <Route 
+  path="/admin/deletion-history" 
+  element={
+    <AdminRoute>
+      <UserDeletionHistory />
+    </AdminRoute>
+  } 
+/>
         
         <Route 
           path="/attendance" 
@@ -127,15 +162,6 @@ function AppRoutes() {
             </ProtectedRoute>
           } 
         />
-
-        <Route 
-  path="/dashboard/ceo" 
-  element={
-    <AdminRoute>
-      <CEODashboard />
-    </AdminRoute>
-  } 
-/>
         
         <Route 
           path="/security" 
@@ -146,12 +172,32 @@ function AppRoutes() {
           } 
         />
 
-        {/* ✅ ADD THIS - Admin Route */}
+        {/* Manager Routes - Combined User Creation & Deletion Requests */}
+        <Route 
+          path="/admin/manager-requests" 
+          element={
+            <ManagerRoute>
+              <ManagerRequests />
+            </ManagerRoute>
+          } 
+        />
+
+        {/* Admin Routes */}
         <Route 
           path="/admin" 
           element={
             <AdminRoute>
               <AdminDashboard />
+            </AdminRoute>
+          } 
+        />
+
+        {/* CEO Dashboard */}
+        <Route 
+          path="/dashboard/ceo" 
+          element={
+            <AdminRoute>
+              <CEODashboard />
             </AdminRoute>
           } 
         />

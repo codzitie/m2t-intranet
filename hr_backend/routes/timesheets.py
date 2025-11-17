@@ -24,8 +24,8 @@ def minutes_to_hours(minutes: int) -> float:
     return minutes / 60 if minutes else 0
 
 def validate_timesheet_hours(hours: float) -> bool:
-    """Validate if hours is within 7-8.5 range"""
-    return 7 <= hours <= 8.5
+    """No validation—always True"""
+    return True
 
 def auto_lock_old_entries(entries, today):
     """✅ AUTO-LOCK entries older than 2 days with no data"""
@@ -87,11 +87,11 @@ def create_timesheet(
     hours = minutes_to_hours(hours_minutes)
     
     # Validate hours
-    if not validate_timesheet_hours(hours):
+    """if not validate_timesheet_hours(hours):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Hours must be between 7 and 8.5. You entered {hours}h"
-        )
+        )"""
     
     # Update or create entry
     if existing:

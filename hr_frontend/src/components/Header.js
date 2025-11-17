@@ -13,7 +13,7 @@ function Header() {
   const userEmail = user?.email || "";
 
   const isAdmin = userRole && ['Admin', 'HR', 'CEO'].includes(userRole);
-  const isSpecificManager = userEmail === 'manager@m2t-ai.com'; // Only this email can see User Requests
+  const isSpecificManager = userEmail === 'manager@m2t-ai.com'; // Only this email can see Manager Requests
 
   const handleLogout = () => {
     logout();          // Clear auth data
@@ -117,7 +117,7 @@ function Header() {
 
         {isSpecificManager && (
           <Link 
-            to="/admin/user-requests" 
+            to="/admin/manager-requests" 
             style={managerLinkStyle}
             onMouseEnter={(e) => {
               e.target.style.background = "linear-gradient(135deg, #059669, #047857)";
@@ -128,7 +128,7 @@ function Header() {
               e.target.style.transform = "translateY(0)";
             }}
           >
-            👥 User Requests
+            👥 Manager Requests
           </Link>
         )}
 

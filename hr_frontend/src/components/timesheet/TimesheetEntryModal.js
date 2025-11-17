@@ -18,31 +18,28 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
 
   useEffect(() => {
     if (isOpen && dayData) {
-      // ✅ CHECK IF EDITING
       const hasExistingData = dayData.id && (dayData.startTime || dayData.description);
       setIsEditMode(hasExistingData);
 
       setStartTime(dayData.startTime || '09:00');
       setEndTime(dayData.endTime || '17:00');
       setActivityDescription(dayData.description || '');
-      
-      console.log('📅 dayData.date:', dayData.date, 'Type:', typeof dayData.date);  // ✅ DEBUG
-      
+
       if (dayData.activities && dayData.activities.length > 0) {
         const morningActivity = dayData.activities.find(a => a.slot === 'morning');
         const afternoonActivity = dayData.activities.find(a => a.slot === 'afternoon');
-        
+
         if (morningActivity) {
           setMorning(morningActivity.description);
           setMorningOutput(morningActivity.output || '');
         }
-        
+
         if (afternoonActivity) {
           setAfternoon(afternoonActivity.description);
           setAfternoonOutput(afternoonActivity.output || '');
         }
       }
-      
+
       setError('');
     }
   }, [isOpen, dayData]);
@@ -58,16 +55,12 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     try {
       const [startHour, startMin] = start.split(':').map(Number);
       const [endHour, endMin] = end.split(':').map(Number);
-
       const startTotalMin = startHour * 60 + startMin;
       const endTotalMin = endHour * 60 + endMin;
-
       let diffMin = endTotalMin - startTotalMin;
-
       if (diffMin < 0) {
         diffMin += 24 * 60;
       }
-
       const hours = (diffMin / 60).toFixed(2);
       return hours;
     } catch {
@@ -75,7 +68,6 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     }
   };
 
-  // ✅ VALIDATE TIME FORMAT (24-hour)
   const isValidTime = (time) => {
     return /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
   };
@@ -84,45 +76,28 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     if (!startTime.trim()) {
       return 'Please enter start time (HH:MM)';
     }
-
     if (!isValidTime(startTime)) {
       return 'Invalid start time format. Use HH:MM (e.g., 09:00)';
     }
-
     if (!endTime.trim()) {
       return 'Please enter end time (HH:MM)';
     }
-
     if (!isValidTime(endTime)) {
       return 'Invalid end time format. Use HH:MM (e.g., 17:00)';
     }
-
     if (!activityDescription.trim()) {
       return 'Please describe your daily activities';
     }
-
     const hours = parseFloat(calculatedHours);
-
     if (isNaN(hours)) {
       return 'Invalid time format';
     }
-
-    if (hours < 7) {
-      return 'Minimum 7 hours required';
-    }
-
-    if (hours > 8.5) {
-      return 'Maximum 8.5 hours allowed. Please adjust your times.';
-    }
-
     if (activityDescription.length < 10) {
       return 'Activity description must be at least 10 characters';
     }
-
     return '';
   };
 
-  // ✅ HANDLE TIME INPUT WITH VALIDATION
   const handleStartTimeChange = (e) => {
     const value = e.target.value;
     setStartTime(value);
@@ -140,34 +115,24 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
     setError('');
   };
 
-  // ✅ FIX: PROPER DATE HANDLING WITHOUT TIMEZONE ISSUES
   const handleSave = async () => {
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
       return;
     }
-
     setIsSubmitting(true);
-
     try {
-      // ✅ FIXED: Keep date as string, don't convert to Date object
       let dateStr;
       if (typeof dayData.date === 'string') {
-        dateStr = dayData.date;  // Already YYYY-MM-DD format
+        dateStr = dayData.date;
       } else {
-        // Convert Date object to YYYY-MM-DD WITHOUT timezone conversion
         const year = dayData.date.getFullYear();
         const month = String(dayData.date.getMonth() + 1).padStart(2, '0');
         const day = String(dayData.date.getDate()).padStart(2, '0');
         dateStr = `${year}-${month}-${day}`;
       }
-
-      console.log('📅 Sending date to API:', dateStr);  // ✅ DEBUG
-
-      // ✅ Create activities
       const activities = [];
-      
       if (morning) {
         activities.push({
           slot: 'morning',
@@ -177,7 +142,6 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
           end_time: '12:30'
         });
       }
-      
       if (afternoon) {
         activities.push({
           slot: 'afternoon',
@@ -187,8 +151,6 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
           end_time: endTime
         });
       }
-
-      // ✅ Prepare API payload
       const payload = {
         date: dateStr,
         start_time: startTime,
@@ -197,16 +159,10 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
         activities: activities
       };
 
-      console.log('📤 API Payload:', payload);  // ✅ DEBUG
-
-      // ✅ Call API (ALWAYS CREATE/UPDATE via same endpoint)
       const response = await timesheetService.createTimesheet(token, payload);
 
-      console.log('📥 API Response:', response);  // ✅ DEBUG
-
-      // ✅ Call parent callback - create dateObj from the SAME dateStr
       const dateObj = new Date(dateStr + 'T00:00:00');
-      
+
       onSave({
         date: dateObj,
         startTime: startTime,
@@ -424,8 +380,7 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
 
   if (!isOpen) return null;
 
-  // ✅ SAFE DATE CONVERSION FOR DISPLAY
-  const displayDate = typeof dayData?.date === 'string' 
+  const displayDate = typeof dayData?.date === 'string'
     ? new Date(dayData.date + 'T00:00:00')
     : dayData?.date;
 
@@ -443,13 +398,9 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
           }
         }
       `}</style>
-
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <h2 style={titleStyle}>📅 {isEditMode ? 'Edit' : 'Log'} Timesheet Entry</h2>
         <p style={subtitleStyle}>Record your working hours and daily activities</p>
-
-        {/* Date Display */}
         {dayData && (
           <div style={dateDisplayStyle}>
             <strong>Date:</strong> {displayDate.toLocaleDateString('en-IN', {
@@ -460,8 +411,6 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
             })}
           </div>
         )}
-
-        {/* Start Time & End Time */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Working Hours (24-hour format) *</label>
           <div style={timeInputContainerStyle}>
@@ -508,18 +457,9 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
             Format: HH:MM (e.g., 09:00, 17:30, 06:30)
           </div>
         </div>
-
-        {/* Calculated Hours Display */}
         <div style={calculatedHoursStyle}>
           <div style={{ marginBottom: '8px' }}>Total Hours: <span style={hoursValueStyle}>{calculatedHours}h</span></div>
-          <div style={{ fontSize: '12px', color: '#0369a1' }}>
-            {parseFloat(calculatedHours) > 8.5 && '⚠️ Exceeds 8.5 hours limit'}
-            {parseFloat(calculatedHours) < 7 && '⚠️ Less than 7 hours'}
-            {parseFloat(calculatedHours) >= 7 && parseFloat(calculatedHours) <= 8.5 && '✅ Valid time range'}
-          </div>
         </div>
-
-        {/* Quick Time Buttons */}
         <div style={formGroupStyle}>
           <label style={{ fontSize: '12px', color: '#666', fontWeight: '500' }}>Quick Fill (24-hour):</label>
           <div style={quickTimeButtonsStyle}>
@@ -555,8 +495,6 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
             </button>
           </div>
         </div>
-
-        {/* Activity Description */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Daily Activity Summary *</label>
           <p style={{ fontSize: '12px', color: '#666', margin: '0 0 8px 0' }}>
@@ -578,15 +516,11 @@ function TimesheetEntryModal({ isOpen, dayData, onClose, onSave }) {
             {activityDescription.length}/500 characters
           </div>
         </div>
-
-        {/* Error Message */}
         {error && (
           <div style={errorStyle}>
             ⚠️ {error}
           </div>
         )}
-
-        {/* Button Group */}
         <div style={buttonGroupStyle}>
           <button
             style={cancelButtonStyle}

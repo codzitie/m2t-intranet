@@ -6,7 +6,13 @@ from datetime import datetime, date
 from database import (
     get_db, User, LeaveBalance, LeaveType,
     TimesheetEntry, TimesheetUnlockRequest, UserCreationRequest,
-    LeaveApplication, Notification, TimesheetActivity   # Add these!
+    LeaveApplication, Notification, TimesheetActivity,
+    UserDeletionRequest  # Add this!
+)
+from schemas import (
+    CreateUserDeletionRequest,
+    UserDeletionRequestResponse,
+    ReviewUserDeletionRequest
 )
 
 from auth import get_current_user, hash_password
@@ -589,3 +595,187 @@ def get_admin_dashboard_stats(
         "rejected_unlock_requests": rejected_unlocks,
         "pending_user_requests": pending_user_requests
     }
+
+
+# ============= USER DELETION REQUESTS =============
+
+@router.post("/user-deletion-requests", response_model=UserDeletionRequestResponse, status_code=status.HTTP_201_CREATED)
+def create_user_deletion_request(
+    data: CreateUserDeletionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Create a user deletion request (requires manager approval)"""
+    
+    # Get the user to be deleted
+    user_to_delete = db.query(User).filter(User.id == data.user_id).first()
+    if not user_to_delete:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Check if there's already a pending request for this user
+    existing_request = db.query(UserDeletionRequest).filter(
+        UserDeletionRequest.user_id == data.user_id,
+        UserDeletionRequest.status == 'pending'
+    ).first()
+    if existing_request:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A pending deletion request for this user already exists"
+        )
+    
+    # Create deletion request
+    request = UserDeletionRequest(
+        id=str(uuid.uuid4()),
+        requested_by=current_user.id,
+        requested_by_name=current_user.name,
+        user_id=user_to_delete.id,
+        user_name=user_to_delete.name,
+        user_email=user_to_delete.email,
+        reason=data.reason,
+        status='pending'
+    )
+    
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    
+    return UserDeletionRequestResponse(
+        id=request.id,
+        requested_by=request.requested_by,
+        requested_by_name=request.requested_by_name,
+        user_id=request.user_id,
+        user_name=request.user_name,
+        user_email=request.user_email,
+        reason=request.reason,
+        status=request.status,
+        approver_id=request.approver_id,
+        approver_name=request.approver_name,
+        approved_on=request.approved_on,
+        rejection_remarks=request.rejection_remarks,
+        created_at=request.created_at
+    )
+
+
+@router.get("/user-deletion-requests", response_model=List[UserDeletionRequestResponse])
+def get_user_deletion_requests(
+    status_filter: str = 'pending',
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
+    """Get all user deletion requests (Manager and above)"""
+    
+    query = db.query(UserDeletionRequest)
+    
+    if status_filter and status_filter != 'all':
+        query = query.filter(UserDeletionRequest.status == status_filter)
+    
+    requests = query.order_by(UserDeletionRequest.created_at.desc()).all()
+    
+    return [
+        UserDeletionRequestResponse(
+            id=req.id,
+            requested_by=req.requested_by,
+            requested_by_name=req.requested_by_name,
+            user_id=req.user_id,
+            user_name=req.user_name,
+            user_email=req.user_email,
+            reason=req.reason,
+            status=req.status,
+            approver_id=req.approver_id,
+            approver_name=req.approver_name,
+            approved_on=req.approved_on,
+            rejection_remarks=req.rejection_remarks,
+            created_at=req.created_at
+        )
+        for req in requests
+    ]
+
+
+@router.put("/user-deletion-requests/{request_id}/review", response_model=UserDeletionRequestResponse)
+def review_user_deletion_request(
+    request_id: str,
+    review: ReviewUserDeletionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
+    """Approve or reject a user deletion request (Manager and above)"""
+    
+    # Get the request
+    request = db.query(UserDeletionRequest).filter(UserDeletionRequest.id == request_id).first()
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User deletion request not found"
+        )
+    
+    if request.status != 'pending':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Request already {request.status}"
+        )
+    
+    # Update request status
+    request.status = review.status
+    request.approver_id = current_user.id
+    request.approver_name = current_user.name
+    request.approved_on = datetime.utcnow()
+    request.rejection_remarks = review.remarks
+    request.updated_at = datetime.utcnow()
+    
+    # ⭐ Store response data BEFORE any deletion
+    response_data = UserDeletionRequestResponse(
+        id=request.id,
+        requested_by=request.requested_by,
+        requested_by_name=request.requested_by_name,
+        user_id=request.user_id,
+        user_name=request.user_name,
+        user_email=request.user_email,
+        reason=request.reason,
+        status=request.status,
+        approver_id=request.approver_id,
+        approver_name=request.approver_name,
+        approved_on=request.approved_on,
+        rejection_remarks=request.rejection_remarks,
+        created_at=request.created_at
+    )
+    
+    # Commit the request status update first
+    db.commit()
+    
+    # If approved, delete the actual user
+    if review.status == 'approved':
+        user = db.query(User).filter(User.id == request.user_id).first()
+        if user:
+            # Use the same deletion logic
+            new_supervisor_id = user.supervisor_id
+            db.query(User).filter(User.supervisor_id == user.id).update(
+                {User.supervisor_id: new_supervisor_id}, synchronize_session=False)
+            
+            db.query(LeaveApplication).filter(LeaveApplication.approved_by == user.id).update(
+                {LeaveApplication.approved_by: None}, synchronize_session=False)
+            db.query(LeaveApplication).filter(LeaveApplication.l1_approved_by == user.id).update(
+                {LeaveApplication.l1_approved_by: None}, synchronize_session=False)
+            db.query(LeaveApplication).filter(LeaveApplication.l2_approved_by == user.id).update(
+                {LeaveApplication.l2_approved_by: None}, synchronize_session=False)
+            
+            db.query(LeaveBalance).filter(LeaveBalance.user_id == user.id).delete(synchronize_session=False)
+            db.query(LeaveApplication).filter(LeaveApplication.user_id == user.id).delete(synchronize_session=False)
+            db.query(Notification).filter(Notification.user_id == user.id).delete(synchronize_session=False)
+            db.query(TimesheetUnlockRequest).filter(TimesheetUnlockRequest.user_id == user.id).delete(synchronize_session=False)
+            db.query(UserCreationRequest).filter(UserCreationRequest.requested_by == user.id).delete(synchronize_session=False)
+            
+            timesheet_entry_ids = [
+                entry.id for entry in db.query(TimesheetEntry.id).filter(TimesheetEntry.user_id == user.id).all()
+            ]
+            if timesheet_entry_ids:
+                db.query(TimesheetActivity).filter(TimesheetActivity.timesheet_id.in_(timesheet_entry_ids)).delete(synchronize_session=False)
+            
+            db.query(TimesheetEntry).filter(TimesheetEntry.user_id == user.id).delete(synchronize_session=False)
+            db.delete(user)
+            db.commit()
+    
+    # ⭐ Return the response data we captured earlier
+    return response_data

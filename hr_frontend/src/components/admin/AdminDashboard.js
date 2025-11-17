@@ -3,8 +3,8 @@ import axios from 'axios';
 import CreateUser from './CreateUser';
 import UnlockRequests from './UnlockRequests';
 import UserList from './UserList';
-import AutoMarkAbsent from './AutoMarkAbsent';  // ✅ ADD THIS IMPORT
-
+import AutoMarkAbsent from './AutoMarkAbsent';
+import UserDeletionHistory from './UserDeletionHistory'; // ✅ Import history view
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('users');
@@ -40,7 +40,7 @@ export default function AdminDashboard() {
           ⚙️ Admin Dashboard
         </h1>
         <p style={{ margin: '8px 0 0', fontSize: '14px', opacity: 0.9 }}>
-          Manage users, unlock requests, and auto-mark absent
+          Manage users, unlock requests, auto-mark absent, and view deletion history
         </p>
       </div>
 
@@ -85,7 +85,7 @@ export default function AdminDashboard() {
         gap: '12px',
         marginBottom: '24px',
         borderBottom: '2px solid #e5e7eb',
-        flexWrap: 'wrap',  // ✅ ADD THIS FOR RESPONSIVE
+        flexWrap: 'wrap',
       }}>
         <TabButton
           active={activeTab === 'users'}
@@ -105,12 +105,18 @@ export default function AdminDashboard() {
           icon="🔓"
           label="Unlock Requests"
         />
-        {/* ✅ ADD THIS NEW TAB */}
         <TabButton
           active={activeTab === 'auto-mark-absent'}
           onClick={() => setActiveTab('auto-mark-absent')}
           icon="❌"
           label="Auto-Mark Absent"
+        />
+        {/* ✅ Add Deletion History Tab */}
+        <TabButton
+          active={activeTab === 'deletion-history'}
+          onClick={() => setActiveTab('deletion-history')}
+          icon="📋"
+          label="Deletion History"
         />
       </div>
 
@@ -119,8 +125,8 @@ export default function AdminDashboard() {
         {activeTab === 'users' && <UserList />}
         {activeTab === 'create-user' && <CreateUser onSuccess={fetchStats} />}
         {activeTab === 'unlock-requests' && <UnlockRequests onUpdate={fetchStats} />}
-        {/* ✅ ADD THIS NEW TAB CONTENT */}
         {activeTab === 'auto-mark-absent' && <AutoMarkAbsent />}
+        {activeTab === 'deletion-history' && <UserDeletionHistory />} {/* ✅ history content */}
       </div>
     </div>
   );

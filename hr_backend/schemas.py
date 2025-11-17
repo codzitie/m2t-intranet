@@ -85,6 +85,51 @@ class UserCreationRequestStats(BaseModel):
     approved_requests: int
     rejected_requests: int
 
+
+
+
+# ============= USER DELETION REQUEST SCHEMAS =============
+
+class CreateUserDeletionRequest(BaseModel):
+    """Schema for creating a user deletion request"""
+    user_id: str
+    reason: Optional[str] = None
+
+
+class UserDeletionRequestResponse(BaseModel):
+    """Schema for user deletion request response"""
+    id: str
+    requested_by: str
+    requested_by_name: str
+    user_id: str
+    user_name: str
+    user_email: str
+    reason: Optional[str]
+    status: str  # 'pending', 'approved', 'rejected'
+    approver_id: Optional[str]
+    approver_name: Optional[str]
+    approved_on: Optional[datetime]
+    rejection_remarks: Optional[str]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class ReviewUserDeletionRequest(BaseModel):
+    """Schema for approving/rejecting user deletion request"""
+    status: str = Field(..., pattern="^(approved|rejected)$")
+    remarks: Optional[str] = None
+
+
+class UserDeletionRequestStats(BaseModel):
+    """Schema for user deletion request statistics"""
+    total_requests: int
+    pending_requests: int
+    approved_requests: int
+    rejected_requests: int
+
+
 # ============= LEAVE TYPE SCHEMAS =============
 
 class LeaveTypeResponse(BaseModel):
