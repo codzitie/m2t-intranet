@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, date
 from database import (
-    get_db, User, LeaveBalance, LeaveType, 
-    TimesheetEntry, TimesheetUnlockRequest
+    get_db, User, LeaveBalance, LeaveType,
+    TimesheetEntry, TimesheetUnlockRequest, UserCreationRequest,
+    LeaveApplication, Notification, TimesheetActivity   # Add these!
 )
+
 from auth import get_current_user, hash_password
 from pydantic import BaseModel, EmailStr
 from email_service import send_new_user_credentials
@@ -26,7 +28,6 @@ class CreateUserRequest(BaseModel):
     designation: str
     supervisor_id: str | None = None
     join_date: str | None = None
-    # Password field removed - auto-generated now
 
 class UserResponse(BaseModel):
     id: str
@@ -37,6 +38,28 @@ class UserResponse(BaseModel):
     designation: str
     supervisor_id: str | None
     join_date: str
+
+class UserCreationRequestResponse(BaseModel):
+    id: str
+    requested_by: str
+    requested_by_name: str
+    name: str
+    email: str
+    role: str
+    department: str
+    designation: str
+    supervisor_id: str | None
+    join_date: str
+    status: str
+    approver_id: str | None
+    approver_name: str | None
+    approved_on: datetime | None
+    rejection_remarks: str | None
+    created_at: datetime
+
+class ReviewUserCreationRequest(BaseModel):
+    status: str  # 'approved' or 'rejected'
+    remarks: str | None = None
 
 class UnlockRequestResponse(BaseModel):
     id: str
@@ -53,7 +76,7 @@ class UnlockRequestResponse(BaseModel):
     remarks: str | None
 
 class ReviewUnlockRequest(BaseModel):
-    status: str  # 'approved' or 'rejected'
+    status: str
     remarks: str
 
 # ============= MIDDLEWARE =============
@@ -67,17 +90,138 @@ def require_admin(current_user: User = Depends(get_current_user)):
         )
     return current_user
 
-# ============= UTILITY: GENERATE SECURE PASSWORD =============
+def require_manager(current_user: User = Depends(get_current_user)):
+    """Ensure user is Manager, Team Lead, or higher"""
+    if current_user.role not in ['Manager', 'Team Lead', 'CEO', 'HR', 'Founder']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager access required"
+        )
+    return current_user
+
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Delete a user and cascade supervisor to their manager (if any)."""
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Get this user's supervisor (proposed new manager for subordinates)
+    new_supervisor_id = user.supervisor_id
+
+    # Update direct reports to report to this user's manager (or null if none)
+    db.query(User).filter(User.supervisor_id == user_id).update(
+        {User.supervisor_id: new_supervisor_id},
+        synchronize_session=False
+    )
+
+    # Nullify referencing FK columns in leave_applications before deleting user (avoid FK error)
+    db.query(LeaveApplication).filter(LeaveApplication.approved_by == user_id).update(
+        {LeaveApplication.approved_by: None}, synchronize_session=False)
+    db.query(LeaveApplication).filter(LeaveApplication.l1_approved_by == user_id).update(
+        {LeaveApplication.l1_approved_by: None}, synchronize_session=False)
+    db.query(LeaveApplication).filter(LeaveApplication.l2_approved_by == user_id).update(
+        {LeaveApplication.l2_approved_by: None}, synchronize_session=False)
+
+    # --- normal cascade delete for all records directly belonging to user ---
+    db.query(LeaveBalance).filter(LeaveBalance.user_id == user_id).delete(synchronize_session=False)
+    db.query(LeaveApplication).filter(LeaveApplication.user_id == user_id).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(TimesheetUnlockRequest).filter(TimesheetUnlockRequest.user_id == user_id).delete(synchronize_session=False)
+    db.query(UserCreationRequest).filter(UserCreationRequest.requested_by == user_id).delete(synchronize_session=False)
+
+    # Delete TimesheetActivity by all timesheet_entries of this user
+    timesheet_entry_ids = [
+        entry.id
+        for entry in db.query(TimesheetEntry.id).filter(TimesheetEntry.user_id == user_id).all()
+    ]
+    if timesheet_entry_ids:
+        db.query(TimesheetActivity).filter(TimesheetActivity.timesheet_id.in_(timesheet_entry_ids)).delete(synchronize_session=False)
+
+    # Delete timesheet entries
+    db.query(TimesheetEntry).filter(TimesheetEntry.user_id == user_id).delete(synchronize_session=False)
+
+    # Finally, delete the user record itself
+    db.delete(user)
+    db.commit()
+    return
+
+
+
+
+class UpdateUserRequest(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    department: str
+    designation: str
+    supervisor_id: str | None = None
+    join_date: str | None = None
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: str,
+    data: UpdateUserRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Update user details by ID (Admin only)"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Check if email is used by another user
+    email_user = db.query(User).filter(User.email == data.email, User.id != user_id).first()
+    if email_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already in use by another user"
+        )
+
+    user.name = data.name
+    user.email = data.email
+    user.role = data.role
+    user.department = data.department
+    user.designation = data.designation
+    user.supervisor_id = data.supervisor_id
+    if data.join_date:
+        user.join_date = datetime.strptime(data.join_date, '%Y-%m-%d').date()
+    db.commit()
+    db.refresh(user)
+
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        department=user.department or "",
+        designation=user.designation or "",
+        supervisor_id=user.supervisor_id,
+        join_date=str(user.join_date)
+    )
+
+# ============= UTILITY =============
 
 def generate_secure_password(length: int = 12) -> str:
     """Generate a secure random password"""
-    # Ensure at least one of each type
     lowercase = string.ascii_lowercase
     uppercase = string.ascii_uppercase
     digits = string.digits
     special = "!@#$%^&*"
     
-    # Pick one of each to ensure requirements
     password = [
         secrets.choice(lowercase),
         secrets.choice(uppercase),
@@ -85,24 +229,22 @@ def generate_secure_password(length: int = 12) -> str:
         secrets.choice(special)
     ]
     
-    # Fill the rest randomly
     all_chars = lowercase + uppercase + digits + special
     password += [secrets.choice(all_chars) for _ in range(length - 4)]
     
-    # Shuffle to avoid predictable pattern
     secrets.SystemRandom().shuffle(password)
     
     return ''.join(password)
 
-# ============= CREATE USER =============
+# ============= CREATE USER REQUEST (NOT DIRECT USER) =============
 
-@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(
+@router.post("/user-requests", response_model=UserCreationRequestResponse, status_code=status.HTTP_201_CREATED)
+def create_user_request(
     data: CreateUserRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """Create a new user with auto-generated password (Admin only)"""
+    """Create a user creation request (requires manager approval)"""
     
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == data.email).first()
@@ -110,6 +252,17 @@ def create_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
+        )
+    
+    # Check if there's already a pending request for this email
+    existing_request = db.query(UserCreationRequest).filter(
+        UserCreationRequest.email == data.email,
+        UserCreationRequest.status == 'pending'
+    ).first()
+    if existing_request:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A pending request for this email already exists"
         )
     
     # Validate supervisor exists
@@ -121,64 +274,194 @@ def create_user(
                 detail="Supervisor not found"
             )
     
-    # Generate secure temporary password
-    temporary_password = generate_secure_password(12)
-    
-    # Create new user
-    new_user = User(
+    # Create user creation request
+    request = UserCreationRequest(
         id=str(uuid.uuid4()),
-        email=data.email,
+        requested_by=current_user.id,
+        requested_by_name=current_user.name,
         name=data.name,
-        password_hash=hash_password(temporary_password),
+        email=data.email,
         role=data.role,
         department=data.department,
         designation=data.designation,
         supervisor_id=data.supervisor_id,
-        join_date=datetime.strptime(data.join_date, '%Y-%m-%d').date() if data.join_date else date.today()
+        join_date=datetime.strptime(data.join_date, '%Y-%m-%d').date() if data.join_date else date.today(),
+        status='pending'
     )
     
-    db.add(new_user)
+    db.add(request)
     db.commit()
-    db.refresh(new_user)
+    db.refresh(request)
     
-    # Create leave balances for the new user
-    leave_types = db.query(LeaveType).filter(LeaveType.is_active == True).all()
-    for leave_type in leave_types:
-        balance = LeaveBalance(
-            user_id=new_user.id,
-            leave_type_id=leave_type.id,
-            total=leave_type.yearly_quota,
-            used=0,
-            remaining=leave_type.yearly_quota,
-            year=date.today().year
+    return UserCreationRequestResponse(
+        id=request.id,
+        requested_by=request.requested_by,
+        requested_by_name=request.requested_by_name,
+        name=request.name,
+        email=request.email,
+        role=request.role,
+        department=request.department or "",
+        designation=request.designation or "",
+        supervisor_id=request.supervisor_id,
+        join_date=str(request.join_date),
+        status=request.status,
+        approver_id=request.approver_id,
+        approver_name=request.approver_name,
+        approved_on=request.approved_on,
+        rejection_remarks=request.rejection_remarks,
+        created_at=request.created_at
+    )
+
+# ============= GET ALL USER CREATION REQUESTS =============
+
+@router.get("/user-requests", response_model=List[UserCreationRequestResponse])
+def get_user_requests(
+    status_filter: str = 'pending',
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
+    """Get all user creation requests (Manager and above)"""
+    
+    query = db.query(UserCreationRequest)
+    
+    if status_filter and status_filter != 'all':
+        query = query.filter(UserCreationRequest.status == status_filter)
+    
+    requests = query.order_by(UserCreationRequest.created_at.desc()).all()
+    
+    return [
+        UserCreationRequestResponse(
+            id=req.id,
+            requested_by=req.requested_by,
+            requested_by_name=req.requested_by_name,
+            name=req.name,
+            email=req.email,
+            role=req.role,
+            department=req.department or "",
+            designation=req.designation or "",
+            supervisor_id=req.supervisor_id,
+            join_date=str(req.join_date),
+            status=req.status,
+            approver_id=req.approver_id,
+            approver_name=req.approver_name,
+            approved_on=req.approved_on,
+            rejection_remarks=req.rejection_remarks,
+            created_at=req.created_at
         )
-        db.add(balance)
+        for req in requests
+    ]
+
+# ============= APPROVE/REJECT USER CREATION REQUEST =============
+
+@router.put("/user-requests/{request_id}/review", response_model=UserCreationRequestResponse)
+def review_user_creation_request(
+    request_id: str,
+    review: ReviewUserCreationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
+    """Approve or reject a user creation request (Manager and above)"""
+    
+    # Get the request
+    request = db.query(UserCreationRequest).filter(UserCreationRequest.id == request_id).first()
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User creation request not found"
+        )
+    
+    if request.status != 'pending':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Request already {request.status}"
+        )
+    
+    # Update request status
+    request.status = review.status
+    request.approver_id = current_user.id
+    request.approver_name = current_user.name
+    request.approved_on = datetime.utcnow()
+    request.rejection_remarks = review.remarks
+    request.updated_at = datetime.utcnow()
+    
+    # If approved, create the actual user
+    if review.status == 'approved':
+        # Check email doesn't exist (double-check)
+        existing_user = db.query(User).filter(User.email == request.email).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Generate password
+        temporary_password = generate_secure_password(12)
+        
+        # Create user
+        new_user = User(
+            id=str(uuid.uuid4()),
+            email=request.email,
+            name=request.name,
+            password_hash=hash_password(temporary_password),
+            role=request.role,
+            department=request.department,
+            designation=request.designation,
+            supervisor_id=request.supervisor_id,
+            join_date=request.join_date
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        # Create leave balances
+        leave_types = db.query(LeaveType).filter(LeaveType.is_active == True).all()
+        for leave_type in leave_types:
+            balance = LeaveBalance(
+                user_id=new_user.id,
+                leave_type_id=leave_type.id,
+                total=leave_type.yearly_quota,
+                used=0,
+                remaining=leave_type.yearly_quota,
+                year=date.today().year
+            )
+            db.add(balance)
+        
+        db.commit()
+        
+        # Send welcome email
+        try:
+            send_new_user_credentials(
+                email=new_user.email,
+                username=new_user.name,
+                temporary_password=temporary_password,
+                role=new_user.role,
+                department=new_user.department
+            )
+            print(f"✅ Welcome email sent to {new_user.email}")
+        except Exception as e:
+            print(f"⚠️ Failed to send welcome email: {e}")
     
     db.commit()
+    db.refresh(request)
     
-    # Send welcome email with credentials
-    try:
-        send_new_user_credentials(
-            email=new_user.email,
-            username=new_user.name,
-            temporary_password=temporary_password,
-            role=new_user.role,
-            department=new_user.department
-        )
-        print(f"✅ Welcome email sent to {new_user.email}")
-    except Exception as e:
-        print(f"⚠️ Failed to send welcome email: {e}")
-        # Don't fail user creation if email fails - password is in console fallback
-    
-    return UserResponse(
-        id=new_user.id,
-        email=new_user.email,
-        name=new_user.name,
-        role=new_user.role,
-        department=new_user.department or "",
-        designation=new_user.designation or "",
-        supervisor_id=new_user.supervisor_id,
-        join_date=str(new_user.join_date)
+    return UserCreationRequestResponse(
+        id=request.id,
+        requested_by=request.requested_by,
+        requested_by_name=request.requested_by_name,
+        name=request.name,
+        email=request.email,
+        role=request.role,
+        department=request.department or "",
+        designation=request.designation or "",
+        supervisor_id=request.supervisor_id,
+        join_date=str(request.join_date),
+        status=request.status,
+        approver_id=request.approver_id,
+        approver_name=request.approver_name,
+        approved_on=request.approved_on,
+        rejection_remarks=request.rejection_remarks,
+        created_at=request.created_at
     )
 
 # ============= GET ALL USERS =============
@@ -212,7 +495,7 @@ def get_potential_supervisors(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """Get list of users who can be supervisors (Manager, Team Lead, CEO, HR)"""
+    """Get list of users who can be supervisors"""
     supervisors = db.query(User).filter(
         User.role.in_(['Manager', 'Team Lead', 'CEO', 'HR', 'Founder'])
     ).order_by(User.name).all()
@@ -231,7 +514,7 @@ def get_potential_supervisors(
         for user in supervisors
     ]
 
-# ============= GET UNLOCK REQUESTS (ADMIN VIEW) =============
+# ============= GET UNLOCK REQUESTS =============
 
 @router.get("/unlock-requests", response_model=List[UnlockRequestResponse])
 def get_all_unlock_requests(
@@ -293,11 +576,16 @@ def get_admin_dashboard_stats(
         TimesheetUnlockRequest.status == 'rejected'
     ).count()
     
+    pending_user_requests = db.query(UserCreationRequest).filter(
+        UserCreationRequest.status == 'pending'
+    ).count()
+    
     return {
         "total_users": total_users,
         "total_employees": total_employees,
         "total_managers": total_managers,
         "pending_unlock_requests": pending_unlocks,
         "approved_unlock_requests": approved_unlocks,
-        "rejected_unlock_requests": rejected_unlocks
+        "rejected_unlock_requests": rejected_unlocks,
+        "pending_user_requests": pending_user_requests
     }

@@ -1,15 +1,24 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 import Notifications from './Notifications';
 
 function Header() {
   const { user, isAuthenticated, logout } = useUser();
+  const navigate = useNavigate();
 
   // Fallbacks for name/role to avoid undefined errors in the UI
   const userName = user?.name || "No Name";
   const userRole = user?.role || "No Role";
+  const userEmail = user?.email || "";
+
   const isAdmin = userRole && ['Admin', 'HR', 'CEO'].includes(userRole);
+  const isSpecificManager = userEmail === 'manager@m2t-ai.com'; // Only this email can see User Requests
+
+  const handleLogout = () => {
+    logout();          // Clear auth data
+    navigate('/login'); // Redirect to login page
+  };
 
   const headerStyle = {
     display: "flex",
@@ -45,6 +54,15 @@ function Header() {
     borderRadius: "6px",
     fontWeight: "700",
     boxShadow: "0 2px 8px rgba(251, 191, 36, 0.3)",
+  };
+
+  const managerLinkStyle = {
+    ...linkStyle,
+    background: "linear-gradient(135deg, #10b981, #059669)",
+    padding: "8px 16px",
+    borderRadius: "6px",
+    fontWeight: "700",
+    boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
   };
 
   const userInfoStyle = {
@@ -97,6 +115,23 @@ function Header() {
           </Link>
         )}
 
+        {isSpecificManager && (
+          <Link 
+            to="/admin/user-requests" 
+            style={managerLinkStyle}
+            onMouseEnter={(e) => {
+              e.target.style.background = "linear-gradient(135deg, #059669, #047857)";
+              e.target.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = "linear-gradient(135deg, #10b981, #059669)";
+              e.target.style.transform = "translateY(0)";
+            }}
+          >
+            👥 User Requests
+          </Link>
+        )}
+
         {isAdmin && (
           <Link 
             to="/admin" 
@@ -114,7 +149,6 @@ function Header() {
           </Link>
         )}
 
-        {/* User Info Section */}
         {isAuthenticated && user && (
           <div style={userInfoStyle}>
             <Notifications />
@@ -123,7 +157,7 @@ function Header() {
             </span>
             <button 
               style={logoutButtonStyle}
-              onClick={logout}
+              onClick={handleLogout}
               onMouseEnter={(e) => {
                 e.target.style.backgroundColor = "white";
                 e.target.style.color = "#004aad";

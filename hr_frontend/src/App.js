@@ -11,7 +11,8 @@ import RoleSwitcher from "./components/RoleSwitcher";
 import TimesheetDashboard from "./components/timesheet/TimesheetDashboard";
 import AdminDashboard from "./components/admin/AdminDashboard"; 
 import CEODashboard from "./components/CEODashboard"; 
-import ForgotPassword from './components/ForgotPassword'; 
+import ForgotPassword from './components/ForgotPassword';
+import UserRequestsList from './components/admin/UserRequestsList';
 
 function PlaceholderPage({ title }) {
   return (
@@ -106,7 +107,7 @@ function AppRoutes() {
             </ProtectedRoute>
           } 
         />
-
+        <Route path="/admin/user-requests" element={<UserRequestsList />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         
         <Route 

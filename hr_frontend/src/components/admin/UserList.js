@@ -7,6 +7,9 @@ export default function UserList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('all');
 
+  const [editingUser, setEditingUser] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -26,6 +29,10 @@ export default function UserList() {
     }
   };
 
+  // Supervisor roles eligible for dropdown
+  const supervisorRoles = ["Manager", "Team Lead", "CEO"];
+  const eligibleSupervisors = users.filter(u => supervisorRoles.includes(u.role));
+
   // Get supervisor name by ID
   const getSupervisorName = (supervisorId) => {
     if (!supervisorId) return '-';
@@ -36,11 +43,9 @@ export default function UserList() {
   // Filter users
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.designation.toLowerCase().includes(searchTerm.toLowerCase());
-    
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.designation.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRole = filterRole === 'all' || user.role === filterRole;
-    
     return matchesSearch && matchesRole;
   });
 
@@ -55,6 +60,58 @@ export default function UserList() {
       'Admin': '#ec4899'
     };
     return colors[role] || '#64748b';
+  };
+
+  // Delete user
+  const deleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:8000/api/admin/users/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert('User deleted successfully');
+      fetchUsers();
+    } catch (error) {
+      alert('Failed to delete user');
+    }
+  };
+
+  // Open edit modal and setup form data
+  const openEditUser = (user) => {
+    setEditingUser(user);
+    setEditFormData({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: user.department || '',
+      designation: user.designation || '',
+      supervisor_id: user.supervisor_id || '',
+      join_date: user.join_date || ''
+    });
+  };
+
+  // Handle edit form changes
+  const handleEditChange = (e) => {
+    setEditFormData({
+      ...editFormData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  // Submit user update
+  const submitEdit = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`http://localhost:8000/api/admin/users/${editingUser.id}`, editFormData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert('User updated successfully');
+      setEditingUser(null);
+      fetchUsers();
+    } catch (error) {
+      alert('Failed to update user');
+    }
   };
 
   return (
@@ -173,11 +230,12 @@ export default function UserList() {
                   <TableHeader>Department</TableHeader>
                   <TableHeader>Reporting Manager</TableHeader>
                   <TableHeader>Join Date</TableHeader>
+                  <TableHeader>Actions</TableHeader>
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((user, index) => (
-                  <tr 
+                {filteredUsers.map((user) => (
+                  <tr
                     key={user.id}
                     style={{
                       borderBottom: '1px solid #f3f4f6',
@@ -210,7 +268,7 @@ export default function UserList() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <a 
+                      <a
                         href={`mailto:${user.email}`}
                         style={{ color: '#3b82f6', textDecoration: 'none' }}
                       >
@@ -231,20 +289,139 @@ export default function UserList() {
                     </TableCell>
                     <TableCell>{user.designation || '-'}</TableCell>
                     <TableCell>{user.department || '-'}</TableCell>
+                    <TableCell>{getSupervisorName(user.supervisor_id)}</TableCell>
+                    <TableCell>{new Date(user.join_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</TableCell>
                     <TableCell>
-                      {getSupervisorName(user.supervisor_id)}
-                    </TableCell>
-                    <TableCell>
-                      {new Date(user.join_date).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
+                      <button onClick={() => openEditUser(user)} style={{
+                        marginRight: '10px',
+                        backgroundColor: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        cursor: 'pointer'
+                      }}>
+                        Edit
+                      </button>
+                      <button onClick={() => deleteUser(user.id)} style={{
+                        backgroundColor: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        cursor: 'pointer'
+                      }}>
+                        Delete
+                      </button>
                     </TableCell>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'white',
+            padding: '24px',
+            borderRadius: '12px',
+            width: '400px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+          }}>
+            <h2>Edit User</h2>
+            <FormField label="Name" name="name" type="text" value={editFormData.name} onChange={handleEditChange} required />
+            <FormField label="Email" name="email" type="email" value={editFormData.email} onChange={handleEditChange} required />
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>
+                Role <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <select
+                name="role"
+                value={editFormData.role}
+                onChange={handleEditChange}
+                required
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  background: '#fff'
+                }}
+              >
+                <option value="Employee">Employee</option>
+                <option value="Manager">Manager</option>
+                <option value="Team Lead">Team Lead</option>
+                <option value="HR">HR</option>
+                <option value="CEO">CEO</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+
+            <FormField label="Department" name="department" type="text" value={editFormData.department} onChange={handleEditChange} required />
+            <FormField label="Designation" name="designation" type="text" value={editFormData.designation} onChange={handleEditChange} required />
+
+            {/* Supervisor Dropdown */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>
+                Supervisor <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <select
+                name="supervisor_id"
+                value={editFormData.supervisor_id}
+                onChange={handleEditChange}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  background: '#fff'
+                }}
+              >
+                <option value="">-- No Supervisor --</option>
+                {eligibleSupervisors.map(sup => (
+                  <option key={sup.id} value={sup.id}>
+                    {sup.name} ({sup.role} - {sup.designation || "N/A"})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <FormField label="Join Date" name="join_date" type="date" value={editFormData.join_date} onChange={handleEditChange} />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', gap: '12px' }}>
+              <button onClick={() => setEditingUser(null)} style={{
+                padding: '8px 14px',
+                background: '#64748b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>Cancel</button>
+              <button onClick={submitEdit} style={{
+                padding: '8px 14px',
+                background: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>Save</button>
+            </div>
           </div>
         </div>
       )}
@@ -279,5 +456,33 @@ function TableCell({ children }) {
     }}>
       {children}
     </td>
+  );
+}
+
+function FormField({ label, name, type, value, onChange, placeholder, required }) {
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+        {label} {required && <span style={{ color: '#ef4444' }}>*</span>}
+      </label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        required={required}
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          border: '1px solid #d1d5db',
+          borderRadius: '8px',
+          fontSize: '14px',
+          transition: 'border 0.2s'
+        }}
+        onFocus={(e) => e.target.style.borderColor = '#2563eb'}
+        onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+      />
+    </div>
   );
 }

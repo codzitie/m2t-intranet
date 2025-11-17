@@ -2,17 +2,11 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 from datetime import date, datetime
 
-
-
 # ============= AUTH SCHEMAS =============
-
-
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
-
-
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -23,18 +17,12 @@ class RegisterRequest(BaseModel):
     designation: Optional[str] = None
     supervisor_id: Optional[str] = None
 
-
-
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: "UserResponse"
 
-
-
 # ============= USER SCHEMAS =============
-
-
 
 class UserResponse(BaseModel):
     id: str
@@ -51,11 +39,53 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# ============= USER CREATION REQUEST SCHEMAS =============
 
+class CreateUserRequest(BaseModel):
+    """Schema for creating a user creation request"""
+    email: EmailStr
+    name: str = Field(..., min_length=2)
+    role: str = Field(..., pattern="^(Employee|Manager|Team Lead|CEO|Founder|HR)$")
+    department: str
+    designation: str
+    supervisor_id: Optional[str] = None
+    join_date: Optional[str] = None
+
+class UserCreationRequestResponse(BaseModel):
+    """Schema for user creation request response"""
+    id: str
+    requested_by: str
+    requested_by_name: str
+    name: str
+    email: str
+    role: str
+    department: str
+    designation: str
+    supervisor_id: Optional[str]
+    join_date: str
+    status: str  # 'pending', 'approved', 'rejected'
+    approver_id: Optional[str]
+    approver_name: Optional[str]
+    approved_on: Optional[datetime]
+    rejection_remarks: Optional[str]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class ReviewUserCreationRequest(BaseModel):
+    """Schema for approving/rejecting user creation request"""
+    status: str = Field(..., pattern="^(approved|rejected)$")
+    remarks: Optional[str] = None
+
+class UserCreationRequestStats(BaseModel):
+    """Schema for user creation request statistics"""
+    total_requests: int
+    pending_requests: int
+    approved_requests: int
+    rejected_requests: int
 
 # ============= LEAVE TYPE SCHEMAS =============
-
-
 
 class LeaveTypeResponse(BaseModel):
     id: int
@@ -66,11 +96,7 @@ class LeaveTypeResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 # ============= LEAVE BALANCE SCHEMAS =============
-
-
 
 class LeaveBalanceResponse(BaseModel):
     leave_type_id: int
@@ -82,19 +108,13 @@ class LeaveBalanceResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 # ============= LEAVE APPLICATION SCHEMAS =============
-
-
 
 class ApplyLeaveRequest(BaseModel):
     leave_type_id: int
     start_date: date
     end_date: date
     reason: str = Field(..., min_length=5, max_length=500)
-
-
 
 class LeaveApplicationResponse(BaseModel):
     id: str
@@ -128,16 +148,10 @@ class LeaveApplicationResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 class ApproveRejectRequest(BaseModel):
     remarks: str = Field(..., min_length=5, max_length=500)
 
-
-
 # ============= NOTIFICATION SCHEMAS =============
-
-
 
 class NotificationResponse(BaseModel):
     id: int
@@ -150,24 +164,16 @@ class NotificationResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 class NotificationsSummary(BaseModel):
     unread_count: int
     notifications: List[NotificationResponse]
 
-
-
 # ============= HR DASHBOARD SCHEMAS =============
-
-
 
 class DepartmentStats(BaseModel):
     department: str
     total_employees: int
     pending_approvals: int
-
-
 
 class HRStatistics(BaseModel):
     total_employees: int
@@ -179,8 +185,6 @@ class HRStatistics(BaseModel):
     pending_approvals_list: List[LeaveApplicationResponse]
     department_stats: List[DepartmentStats]
 
-
-
 class EmployeeBalanceResponse(BaseModel):
     employee_id: str
     employee_name: str
@@ -190,11 +194,7 @@ class EmployeeBalanceResponse(BaseModel):
     sick: dict
     earned: dict
 
-
-
-# ============= CEO DASHBOARD SCHEMAS (NEW) =============
-
-
+# ============= CEO DASHBOARD SCHEMAS =============
 
 class CEOApprovalStats(BaseModel):
     """CEO-specific approval statistics"""
@@ -203,19 +203,13 @@ class CEOApprovalStats(BaseModel):
     total_final_approved: int
     rejected_by_ceo: int
 
-
-
 class CEODashboardResponse(BaseModel):
     """CEO dashboard overview"""
     stats: CEOApprovalStats
     pending_l2_leaves: List[LeaveApplicationResponse]
     recent_approvals: List[LeaveApplicationResponse]
 
-
-
 # =============== TIMESHEET SCHEMAS ===============
-
-
 
 class TimesheetActivitySchema(BaseModel):
     """Schema for timesheet activity"""
@@ -225,8 +219,6 @@ class TimesheetActivitySchema(BaseModel):
     start_time: str
     end_time: str
 
-
-
 class TimesheetEntryCreateSchema(BaseModel):
     """Schema for creating timesheet entry"""
     date: str
@@ -234,8 +226,6 @@ class TimesheetEntryCreateSchema(BaseModel):
     end_time: str
     description: str
     activities: Optional[List[TimesheetActivitySchema]] = []
-
-
 
 class TimesheetEntryResponseSchema(BaseModel):
     """Schema for timesheet entry response"""
@@ -256,8 +246,6 @@ class TimesheetEntryResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 class TimesheetStatsSchema(BaseModel):
     """Schema for timesheet statistics"""
     filled_days: int
@@ -267,15 +255,11 @@ class TimesheetStatsSchema(BaseModel):
     total_days: int
     total_hours: float
 
-
-
 class UnlockRequestCreateSchema(BaseModel):
     """Schema for creating unlock request"""
     timesheet_id: str
     date: str
     reason: str
-
-
 
 class UnlockRequestResponseSchema(BaseModel):
     """Schema for unlock request response"""
@@ -291,14 +275,10 @@ class UnlockRequestResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 class UnlockRequestApproveSchema(BaseModel):
     """Schema for approving/rejecting unlock request"""
     status: str  # "approved" or "rejected"
     remarks: Optional[str] = None
-
-
 
 class HRTimesheetDashboardSchema(BaseModel):
     """Schema for HR timesheet dashboard"""
@@ -308,8 +288,6 @@ class HRTimesheetDashboardSchema(BaseModel):
     today_absent: int
     pending_unlocks: int
     month_summary: dict
-
-
 
 class TimesheetEmployeeResponseSchema(BaseModel):
     """Schema for getting employee timesheet entries"""

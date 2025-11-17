@@ -209,6 +209,34 @@ class TimesheetUnlockRequest(Base):
     approver = relationship("User", foreign_keys=[approved_by])
 
 
+class UserCreationRequest(Base):
+    __tablename__ = "user_creation_requests"
+    
+    id = Column(String, primary_key=True)
+    requested_by = Column(String, ForeignKey('users.id'), nullable=False)
+    requested_by_name = Column(String, nullable=False)
+    
+    # User details
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    role = Column(String, nullable=False)
+    department = Column(String)
+    designation = Column(String)
+    supervisor_id = Column(String, ForeignKey('users.id'))
+    join_date = Column(Date)
+    
+    # Approval workflow
+    status = Column(String, default='pending')
+    approver_id = Column(String, ForeignKey('users.id'))
+    approver_name = Column(String)
+    approved_on = Column(DateTime)
+    rejection_remarks = Column(Text)
+    
+    # Audit
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # Create all tables
 def init_db():
     Base.metadata.create_all(bind=engine)

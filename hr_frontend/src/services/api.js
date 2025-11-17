@@ -19,6 +19,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      // Optionally show a toast or alert here
+      window.location.href = '/login'; // full page reload for security
+    }
+    return Promise.reject(error);
+  }
+);
+
 // ============= AUTH =============
 export const login = async (email, password) => {
   const response = await api.post('/auth/login', { email, password });
