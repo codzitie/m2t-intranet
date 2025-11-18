@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import * as api from '../services/api';
 
-
 function HRDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState(null);
@@ -15,12 +14,10 @@ function HRDashboard() {
   const [selectedLeave, setSelectedLeave] = useState(null);
   const [selectedManagerId, setSelectedManagerId] = useState('');
 
-
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
 
   const loadData = async () => {
     try {
@@ -30,7 +27,6 @@ function HRDashboard() {
         api.getEmployeeBalances(),
         api.getAllEmployees()
       ]);
-
 
       setStats(statsData || {});
       setAllRequests(requestsData || []);
@@ -44,7 +40,6 @@ function HRDashboard() {
     }
   };
 
-
   const getFilteredRequests = () => {
     let filtered = [...allRequests];
     if (filterStatus !== 'All') {
@@ -53,23 +48,15 @@ function HRDashboard() {
     return filtered;
   };
 
-
-  // Enhanced function to get all pending approvals (L1 + L2)
   const getPendingApprovals = () => {
-    return allRequests.filter(req => 
-      req.l1_status === 'Pending' || 
-      (req.l1_status === 'Approved' && req.l2_status === 'Pending')
-    );
+    return allRequests.filter(req => req.status === 'Pending');
   };
 
-
-  // Get managers and team leads for dropdown
   const getAvailableApprovers = () => {
-    return allEmployees.filter(emp => 
+    return allEmployees.filter(emp =>
       emp.role === 'Manager' || emp.role === 'Team Lead'
     );
   };
-
 
   const openRedirectModal = (leave) => {
     setSelectedLeave(leave);
@@ -77,33 +64,29 @@ function HRDashboard() {
     setShowRedirectModal(true);
   };
 
-
   const closeRedirectModal = () => {
     setShowRedirectModal(false);
     setSelectedLeave(null);
     setSelectedManagerId('');
   };
 
-
-  const handleRedirectL1Submit = async () => {
+  const handleRedirectSubmit = async () => {
     if (!selectedManagerId) {
       alert('Please select a manager');
       return;
     }
     try {
-      await api.redirectL1Approval(selectedLeave.id, selectedManagerId);
-      alert('L1 Approver updated successfully!');
+      await api.redirectLeaveApproval(selectedLeave.id, selectedManagerId);
+      alert('Approver updated successfully!');
       closeRedirectModal();
       loadData();
     } catch (err) {
-      alert('Failed to redirect L1 approval');
+      alert('Failed to redirect approval');
     }
   };
 
-
-  // Get approval stage badge
   const getApprovalStageBadge = (request) => {
-    if (request.l1_status === 'Pending') {
+    if (request.status === 'Pending') {
       return (
         <span style={{
           padding: '4px 8px',
@@ -113,112 +96,40 @@ function HRDashboard() {
           fontSize: '11px',
           fontWeight: '600'
         }}>
-          L1 Pending
+          Pending
         </span>
       );
-    } else if (request.l1_status === 'Approved' && request.l2_status === 'Pending') {
+    }
+    if (request.status === 'Approved') {
       return (
         <span style={{
           padding: '4px 8px',
-          backgroundColor: '#DBEAFE',
-          color: '#1E40AF',
+          backgroundColor: '#D1FAE5',
+          color: '#065F46',
           borderRadius: '4px',
           fontSize: '11px',
           fontWeight: '600'
         }}>
-          L2 Pending
+          Approved
+        </span>
+      );
+    }
+    if (request.status === 'Rejected') {
+      return (
+        <span style={{
+          padding: '4px 8px',
+          backgroundColor: '#FEE2E2',
+          color: '#991B1B',
+          borderRadius: '4px',
+          fontSize: '11px',
+          fontWeight: '600'
+        }}>
+          Rejected
         </span>
       );
     }
     return null;
   };
-
-
-  const exportToCSV = () => {
-    const headers = ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'L1 Status', 'L2 Status', 'Applied On', 'Remarks'];
-    const rows = getFilteredRequests().map(req => [
-      req.employee_name,
-      req.leave_type,
-      req.start_date,
-      req.end_date,
-      req.days,
-      req.status,
-      req.l1_status || 'N/A',
-      req.l2_status || 'N/A',
-      req.applied_on,
-      req.supervisor_remarks || '-'
-    ]);
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `leave-requests-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-  };
-
-
-  const exportToExcel = () => {
-    try {
-      // Prepare data for Excel export
-      const filteredData = getFilteredRequests();
-      
-      if (filteredData.length === 0) {
-        alert('No data to export');
-        return;
-      }
-
-      // Create worksheet data with headers
-      const worksheetData = [
-        ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'L1 Status', 'L2 Status', 'Applied On', 'Remarks'],
-        ...filteredData.map(req => [
-          req.employee_name,
-          req.leave_type,
-          req.start_date,
-          req.end_date,
-          req.days,
-          req.status,
-          req.l1_status || 'N/A',
-          req.l2_status || 'N/A',
-          req.applied_on,
-          req.supervisor_remarks || '-'
-        ])
-      ];
-
-      // Create a new workbook and worksheet
-      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-      const workbook = XLSX.utils.book_new();
-      
-      // Set column widths for better readability
-      worksheet['!cols'] = [
-        { wch: 20 }, // Employee
-        { wch: 15 }, // Leave Type
-        { wch: 12 }, // Start Date
-        { wch: 12 }, // End Date
-        { wch: 8 },  // Days
-        { wch: 12 }, // Status
-        { wch: 12 }, // L1 Status
-        { wch: 12 }, // L2 Status
-        { wch: 12 }, // Applied On
-        { wch: 30 }  // Remarks
-      ];
-
-      // Append worksheet to workbook
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Leave Requests');
-
-      // Generate Excel file and trigger download
-      const fileName = `leave-requests-${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(workbook, fileName);
-      
-    } catch (error) {
-      console.error('Error exporting to Excel:', error);
-      alert('Failed to export to Excel. Please try again.');
-    }
-  };
-
 
   const getStatusBadge = (status) => {
     const styles = {
@@ -239,6 +150,77 @@ function HRDashboard() {
     );
   };
 
+  const exportToCSV = () => {
+    const headers = ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Applied On', 'Remarks'];
+    const rows = getFilteredRequests().map(req => [
+      req.employee_name,
+      req.leave_type,
+      req.start_date,
+      req.end_date,
+      req.days,
+      req.status,
+      req.applied_on,
+      req.supervisor_remarks || '-'
+    ]);
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leave-requests-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  const exportToExcel = () => {
+    try {
+      const filteredData = getFilteredRequests();
+
+      if (filteredData.length === 0) {
+        alert('No data to export');
+        return;
+      }
+
+      const worksheetData = [
+        ['Employee', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Applied On', 'Remarks'],
+        ...filteredData.map(req => [
+          req.employee_name,
+          req.leave_type,
+          req.start_date,
+          req.end_date,
+          req.days,
+          req.status,
+          req.applied_on,
+          req.supervisor_remarks || '-'
+        ])
+      ];
+
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+
+      worksheet['!cols'] = [
+        { wch: 20 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 8 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 30 }
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Leave Requests');
+
+      const fileName = `leave-requests-${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      alert('Failed to export to Excel. Please try again.');
+    }
+  };
 
   // Styles
   const containerStyle = { maxWidth: '1400px', margin: '0 auto', padding: '40px 20px' };
@@ -270,8 +252,6 @@ function HRDashboard() {
   const buttonStyle = { padding: '8px 16px', backgroundColor: '#004aad', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' };
   const buttonStyleExcel = { padding: '8px 16px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' };
 
-
-  // Modal styles
   const modalOverlayStyle = {
     position: 'fixed',
     top: 0,
@@ -285,7 +265,6 @@ function HRDashboard() {
     zIndex: 1000
   };
 
-
   const modalContentStyle = {
     backgroundColor: 'white',
     borderRadius: '8px',
@@ -295,14 +274,12 @@ function HRDashboard() {
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
   };
 
-
   const modalTitleStyle = {
     fontSize: '20px',
     fontWeight: '600',
     color: '#333',
     marginBottom: '20px'
   };
-
 
   const modalLabelStyle = {
     display: 'block',
@@ -311,7 +288,6 @@ function HRDashboard() {
     color: '#555',
     marginBottom: '8px'
   };
-
 
   const modalSelectStyle = {
     width: '100%',
@@ -322,13 +298,11 @@ function HRDashboard() {
     marginBottom: '20px'
   };
 
-
   const modalButtonsStyle = {
     display: 'flex',
     gap: '10px',
     justifyContent: 'flex-end'
   };
-
 
   const modalButtonPrimaryStyle = {
     padding: '10px 20px',
@@ -341,7 +315,6 @@ function HRDashboard() {
     cursor: 'pointer'
   };
 
-
   const modalButtonSecondaryStyle = {
     padding: '10px 20px',
     backgroundColor: '#e5e7eb',
@@ -353,7 +326,6 @@ function HRDashboard() {
     cursor: 'pointer'
   };
 
-
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>
@@ -362,10 +334,8 @@ function HRDashboard() {
     );
   }
 
-
   const pendingApprovals = getPendingApprovals();
   const availableApprovers = getAvailableApprovers();
-
 
   return (
     <div style={containerStyle}>
@@ -374,7 +344,6 @@ function HRDashboard() {
         <h1 style={titleStyle}>HR Dashboard</h1>
         <p style={subtitleStyle}>Manage company-wide leave requests and employee balances</p>
       </div>
-
 
       {/* Tabs */}
       <div style={tabsStyle}>
@@ -388,7 +357,6 @@ function HRDashboard() {
           💼 Employee Balances
         </button>
       </div>
-
 
       {/* Tab Content */}
       {activeTab === 'overview' && stats && (
@@ -404,19 +372,14 @@ function HRDashboard() {
               <div style={statValueStyle}>{stats.on_leave_today || 0}</div>
             </div>
             <div style={statCardStyle}>
-              <div style={statLabelStyle}>Pending Approvals (L1 + L2)</div>
+              <div style={statLabelStyle}>Pending Approvals</div>
               <div style={statValueStyle}>{pendingApprovals.length}</div>
-              <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-                {pendingApprovals.filter(r => r.l1_status === 'Pending').length} at L1, {' '}
-                {pendingApprovals.filter(r => r.l1_status === 'Approved' && r.l2_status === 'Pending').length} at L2
-              </div>
             </div>
             <div style={statCardStyle}>
               <div style={statLabelStyle}>Total Leave Requests</div>
               <div style={statValueStyle}>{allRequests.length}</div>
             </div>
           </div>
-
 
           {/* Two Column Layout */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '20px' }}>
@@ -456,10 +419,10 @@ function HRDashboard() {
                   </tbody>
                 </table>
               ) : (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '40px', 
-                  backgroundColor: '#f9fafb', 
+                <div style={{
+                  textAlign: 'center',
+                  padding: '40px',
+                  backgroundColor: '#f9fafb',
                   borderRadius: '6px',
                   color: '#666'
                 }}>
@@ -468,7 +431,8 @@ function HRDashboard() {
                 </div>
               )}
             </div>
-            {/* Pending Approvals - Enhanced */}
+
+            {/* Pending Approvals */}
             <div style={tableContainerStyle}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>
                 ⏰ Pending Approvals
@@ -480,7 +444,7 @@ function HRDashboard() {
                       <th style={thStyle}>Employee</th>
                       <th style={thStyle}>Leave Type</th>
                       <th style={thStyle}>Days</th>
-                      <th style={thStyle}>Stage</th>
+                      <th style={thStyle}>Status</th>
                       <th style={thStyle}>Action</th>
                     </tr>
                   </thead>
@@ -508,33 +472,31 @@ function HRDashboard() {
                         </td>
                         <td style={tdStyle}>{getApprovalStageBadge(leave)}</td>
                         <td style={tdStyle}>
-                          {leave.l1_status === 'Pending' && (
-                            <button
-                              style={{
-                                background: '#F59E0B',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '4px',
-                                padding: '6px 12px',
-                                fontSize: '12px',
-                                fontWeight: '500',
-                                cursor: 'pointer'
-                              }}
-                              onClick={() => openRedirectModal(leave)}
-                            >
-                              🔄 Redirect
-                            </button>
-                          )}
+                          <button
+                            style={{
+                              background: '#F59E0B',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '6px 12px',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => openRedirectModal(leave)}
+                          >
+                            🔄 Redirect
+                          </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               ) : (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '40px', 
-                  backgroundColor: '#f9fafb', 
+                <div style={{
+                  textAlign: 'center',
+                  padding: '40px',
+                  backgroundColor: '#f9fafb',
                   borderRadius: '6px',
                   color: '#666'
                 }}>
@@ -546,7 +508,6 @@ function HRDashboard() {
           </div>
         </>
       )}
-
 
       {activeTab === 'requests' && (
         <>
@@ -569,6 +530,7 @@ function HRDashboard() {
               📊 Export to Excel
             </button>
           </div>
+
           {/* All Requests Table */}
           <div style={tableContainerStyle}>
             {getFilteredRequests().length > 0 ? (
@@ -580,9 +542,7 @@ function HRDashboard() {
                     <th style={thStyle}>From</th>
                     <th style={thStyle}>To</th>
                     <th style={thStyle}>Days</th>
-                    <th style={thStyle}>Overall Status</th>
-                    <th style={thStyle}>L1 Status</th>
-                    <th style={thStyle}>L2 Status</th>
+                    <th style={thStyle}>Status</th>
                     <th style={thStyle}>Applied On</th>
                     <th style={thStyle}>Remarks</th>
                   </tr>
@@ -596,30 +556,6 @@ function HRDashboard() {
                       <td style={tdStyle}>{req.end_date}</td>
                       <td style={tdStyle}>{req.days}</td>
                       <td style={tdStyle}>{getStatusBadge(req.status)}</td>
-                      <td style={tdStyle}>
-                        <span style={{
-                          padding: '4px 8px',
-                          backgroundColor: req.l1_status === 'Approved' ? '#D1FAE5' : req.l1_status === 'Rejected' ? '#FEE2E2' : '#FEF3C7',
-                          color: req.l1_status === 'Approved' ? '#065F46' : req.l1_status === 'Rejected' ? '#991B1B' : '#92400E',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500'
-                        }}>
-                          {req.l1_status || 'N/A'}
-                        </span>
-                      </td>
-                      <td style={tdStyle}>
-                        <span style={{
-                          padding: '4px 8px',
-                          backgroundColor: req.l2_status === 'Approved' ? '#D1FAE5' : req.l2_status === 'Rejected' ? '#FEE2E2' : '#FEF3C7',
-                          color: req.l2_status === 'Approved' ? '#065F46' : req.l2_status === 'Rejected' ? '#991B1B' : '#92400E',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500'
-                        }}>
-                          {req.l2_status || 'N/A'}
-                        </span>
-                      </td>
                       <td style={tdStyle}>{req.applied_on}</td>
                       <td style={tdStyle}>{req.supervisor_remarks || '-'}</td>
                     </tr>
@@ -627,10 +563,10 @@ function HRDashboard() {
                 </tbody>
               </table>
             ) : (
-              <div style={{ 
-                textAlign: 'center', 
-                padding: '40px', 
-                backgroundColor: '#f9fafb', 
+              <div style={{
+                textAlign: 'center',
+                padding: '40px',
+                backgroundColor: '#f9fafb',
                 borderRadius: '6px',
                 color: '#666'
               }}>
@@ -640,7 +576,6 @@ function HRDashboard() {
           </div>
         </>
       )}
-
 
       {activeTab === 'balances' && (
         <div style={tableContainerStyle}>
@@ -663,7 +598,7 @@ function HRDashboard() {
                     <td style={tdStyle}>{emp.email}</td>
                     <td style={tdStyle}>{emp.designation || '-'}</td>
                     <td style={tdStyle}>
-                      {emp.casual.used}/{emp.casual.total} 
+                      {emp.casual.used}/{emp.casual.total}
                       <span style={{ color: '#888', marginLeft: '8px' }}>
                         ({emp.casual.remaining} left)
                       </span>
@@ -685,10 +620,10 @@ function HRDashboard() {
               </tbody>
             </table>
           ) : (
-            <div style={{ 
-              textAlign: 'center', 
-              padding: '40px', 
-              backgroundColor: '#f9fafb', 
+            <div style={{
+              textAlign: 'center',
+              padding: '40px',
+              backgroundColor: '#f9fafb',
               borderRadius: '6px',
               color: '#666'
             }}>
@@ -698,12 +633,11 @@ function HRDashboard() {
         </div>
       )}
 
-
       {/* Redirect Modal */}
       {showRedirectModal && (
         <div style={modalOverlayStyle} onClick={closeRedirectModal}>
           <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={modalTitleStyle}>Redirect L1 Approval</h2>
+            <h2 style={modalTitleStyle}>Redirect Leave Approval</h2>
             {selectedLeave && (
               <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '6px' }}>
                 <p style={{ margin: '4px 0', fontSize: '14px' }}>
@@ -720,7 +654,7 @@ function HRDashboard() {
             <label style={modalLabelStyle}>
               Select New Approver (Manager/Team Lead):
             </label>
-            <select 
+            <select
               style={modalSelectStyle}
               value={selectedManagerId}
               onChange={(e) => setSelectedManagerId(e.target.value)}
@@ -736,7 +670,7 @@ function HRDashboard() {
               <button style={modalButtonSecondaryStyle} onClick={closeRedirectModal}>
                 Cancel
               </button>
-              <button style={modalButtonPrimaryStyle} onClick={handleRedirectL1Submit}>
+              <button style={modalButtonPrimaryStyle} onClick={handleRedirectSubmit}>
                 Confirm Redirect
               </button>
             </div>
@@ -746,6 +680,5 @@ function HRDashboard() {
     </div>
   );
 }
-
 
 export default HRDashboard;

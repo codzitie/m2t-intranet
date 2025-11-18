@@ -178,7 +178,9 @@ function LeaveHistory({ onClose }) {
         ) : filteredHistory.length === 0 ? (
           <div style={emptyStateStyle}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
-            <div style={{ fontSize: '16px' }}>No {filter !== 'All' ? filter.toLowerCase() : ''} leave applications found</div>
+            <div style={{ fontSize: '16px' }}>
+              No {filter !== 'All' ? filter.toLowerCase() : ''} leave applications found
+            </div>
           </div>
         ) : (
           <div style={tableContainerStyle}>
@@ -203,16 +205,16 @@ function LeaveHistory({ onClose }) {
                     <td style={tdStyle}>{leave.end_date}</td>
                     <td style={tdStyle}>{leave.days}</td>
                     <td style={tdStyle}>
-                      <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div
+                        style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
                         {leave.reason}
                       </div>
                     </td>
                     <td style={tdStyle}>{getStatusBadge(leave.status)}</td>
                     <td style={tdStyle}>{leave.applied_on}</td>
                     <td style={tdStyle}>
-                      {leave.supervisor_remarks || (
-                        <span style={{ color: '#9CA3AF', fontStyle: 'italic' }}>-</span>
-                      )}
+                      {leave.supervisor_remarks || <span style={{ color: '#9CA3AF', fontStyle: 'italic' }}>-</span>}
                     </td>
                   </tr>
                 ))}

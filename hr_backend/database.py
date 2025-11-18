@@ -98,18 +98,6 @@ class LeaveApplication(Base):
     approved_on = Column(DateTime, nullable=True)
     approved_by = Column(String, ForeignKey("users.id"), nullable=True)
     
-    # ========== TWO-LEVEL APPROVAL FIELDS ==========
-    l1_status = Column(String, default="Pending")  # Pending, Approved, Rejected
-    l1_approved_by = Column(String, ForeignKey("users.id"), nullable=True)
-    l1_approved_on = Column(DateTime, nullable=True)
-    l1_remarks = Column(Text, nullable=True)
-    
-    l2_status = Column(String, default="Pending")  # Pending, Approved, Rejected
-    l2_approved_by = Column(String, ForeignKey("users.id"), nullable=True)
-    l2_approved_on = Column(DateTime, nullable=True)
-    l2_remarks = Column(Text, nullable=True)
-    # ==============================================
-    
     # Relationships
     user = relationship("User", foreign_keys=[user_id], back_populates="leave_applications")
     leave_type = relationship("LeaveType", back_populates="leave_applications")

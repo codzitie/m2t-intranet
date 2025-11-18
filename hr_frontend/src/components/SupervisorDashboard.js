@@ -65,9 +65,9 @@ function SupervisorDashboard({ onApprovalComplete }) {
       setShowApprovalModal(false);
       setSelectedLeave(null);
       setRemarks('');
-      loadPendingApprovals(); // Reload the list
+      loadPendingApprovals();
       if (onApprovalComplete) {
-        onApprovalComplete(); // Notify parent to refresh count
+        onApprovalComplete();
       }
     } catch (error) {
       alert('❌ ' + (error.response?.data?.detail || 'Error processing request'));
@@ -206,7 +206,6 @@ function SupervisorDashboard({ onApprovalComplete }) {
     color: '#9CA3AF',
   };
 
-  // Modal styles
   const overlayStyle = {
     position: 'fixed',
     top: 0,
@@ -292,9 +291,7 @@ function SupervisorDashboard({ onApprovalComplete }) {
       <div style={headerStyle}>
         <h1 style={titleStyle}>
           Team Leave Approvals
-          {pendingApprovals.length > 0 && (
-            <span style={badgeStyle}>{pendingApprovals.length}</span>
-          )}
+          {pendingApprovals.length > 0 && <span style={badgeStyle}>{pendingApprovals.length}</span>}
         </h1>
         <p style={subtitleStyle}>Review and approve leave requests from your team members</p>
       </div>
@@ -314,9 +311,7 @@ function SupervisorDashboard({ onApprovalComplete }) {
                 <div style={employeeNameStyle}>{leave.employee_name}</div>
                 <div style={leaveTypeStyle}>{leave.leave_type}</div>
               </div>
-              <div style={{ fontSize: '12px', color: '#888' }}>
-                Applied on {leave.applied_on}
-              </div>
+              <div style={{ fontSize: '12px', color: '#888' }}>Applied on {leave.applied_on}</div>
             </div>
 
             <div style={leaveDetailsStyle}>
@@ -330,7 +325,9 @@ function SupervisorDashboard({ onApprovalComplete }) {
               </div>
               <div style={detailItemStyle}>
                 <div style={detailLabelStyle}>Duration</div>
-                <div style={detailValueStyle}>{leave.days} {leave.days === 1 ? 'day' : 'days'}</div>
+                <div style={detailValueStyle}>
+                  {leave.days} {leave.days === 1 ? 'day' : 'days'}
+                </div>
               </div>
             </div>
 
@@ -339,16 +336,10 @@ function SupervisorDashboard({ onApprovalComplete }) {
             </div>
 
             <div style={buttonGroupStyle}>
-              <button
-                style={approveButtonStyle}
-                onClick={() => handleApproveClick(leave)}
-              >
+              <button style={approveButtonStyle} onClick={() => handleApproveClick(leave)}>
                 ✓ Approve
               </button>
-              <button
-                style={rejectButtonStyle}
-                onClick={() => handleRejectClick(leave)}
-              >
+              <button style={rejectButtonStyle} onClick={() => handleRejectClick(leave)}>
                 ✗ Reject
               </button>
             </div>
@@ -360,12 +351,11 @@ function SupervisorDashboard({ onApprovalComplete }) {
       {showApprovalModal && selectedLeave && (
         <div style={overlayStyle} onClick={() => !submitting && setShowApprovalModal(false)}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={modalTitleStyle}>
-              {actionType === 'approve' ? '✓ Approve Leave' : '✗ Reject Leave'}
-            </h2>
-            
+            <h2 style={modalTitleStyle}>{actionType === 'approve' ? '✓ Approve Leave' : '✗ Reject Leave'}</h2>
+
             <div style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
-              <strong>{selectedLeave.employee_name}</strong> - {selectedLeave.leave_type}<br />
+              <strong>{selectedLeave.employee_name}</strong> - {selectedLeave.leave_type}
+              <br />
               {selectedLeave.start_date} to {selectedLeave.end_date} ({selectedLeave.days} days)
             </div>
 
@@ -380,18 +370,10 @@ function SupervisorDashboard({ onApprovalComplete }) {
             />
 
             <div style={modalButtonGroupStyle}>
-              <button
-                style={cancelButtonStyle}
-                onClick={() => setShowApprovalModal(false)}
-                disabled={submitting}
-              >
+              <button style={cancelButtonStyle} onClick={() => setShowApprovalModal(false)} disabled={submitting}>
                 Cancel
               </button>
-              <button
-                style={submitButtonStyle}
-                onClick={handleSubmitAction}
-                disabled={submitting}
-              >
+              <button style={submitButtonStyle} onClick={handleSubmitAction} disabled={submitting}>
                 {submitting ? 'Processing...' : actionType === 'approve' ? 'Approve' : 'Reject'}
               </button>
             </div>

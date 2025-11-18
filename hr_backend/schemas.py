@@ -176,19 +176,6 @@ class LeaveApplicationResponse(BaseModel):
     applied_on: datetime
     approved_on: Optional[datetime]
     
-    # ========== TWO-LEVEL APPROVAL FIELDS ==========
-    l1_status: Optional[str] = "Pending"
-    l1_approved_by: Optional[str] = None
-    l1_approved_by_name: Optional[str] = None
-    l1_approved_on: Optional[datetime] = None
-    l1_remarks: Optional[str] = None
-    
-    l2_status: Optional[str] = "Pending"
-    l2_approved_by: Optional[str] = None
-    l2_approved_by_name: Optional[str] = None
-    l2_approved_on: Optional[datetime] = None
-    l2_remarks: Optional[str] = None
-    # ==============================================
     
     class Config:
         from_attributes = True

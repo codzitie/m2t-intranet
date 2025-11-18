@@ -4,7 +4,7 @@ import * as api from '../services/api';
 
 function CEODashboard() {
   const { user } = useUser();
-  const [pendingL2, setPendingL2] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLeave, setSelectedLeave] = useState(null);
   const [actionType, setActionType] = useState(''); // 'approve' or 'reject'
@@ -13,18 +13,19 @@ function CEODashboard() {
 
   useEffect(() => {
     if (user && user.role === 'CEO') {
-      loadPendingL2();
+      loadPendingApprovals();
     }
     // eslint-disable-next-line
   }, [user]);
 
-  const loadPendingL2 = async () => {
+  const loadPendingApprovals = async () => {
     setLoading(true);
     try {
-      const result = await api.getPendingL2Approvals();
-      setPendingL2(result || []);
+      // Adjusted to use single-level pending approvals endpoint
+      const result = await api.getPendingL1Approvals();
+      setPendingApprovals(result || []);
     } catch (error) {
-      console.error('Error loading CEO L2 approvals:', error);
+      console.error('Error loading CEO approvals:', error);
       alert('Failed to load pending approvals');
     } finally {
       setLoading(false);
@@ -53,14 +54,14 @@ function CEODashboard() {
     try {
       let response;
       if (actionType === 'approve') {
-        response = await api.l2ApproveLeave(selectedLeave.id, remarks);
+        response = await api.l1ApproveLeave(selectedLeave.id, remarks);
       } else {
-        response = await api.l2RejectLeave(selectedLeave.id, remarks);
+        response = await api.l1RejectLeave(selectedLeave.id, remarks);
       }
-      alert(`✅ Leave ${actionType === 'approve' ? 'APPROVED' : 'REJECTED'} (CEO) successfully!`);
+      alert(`✅ Leave ${actionType === 'approve' ? 'APPROVED' : 'REJECTED'} successfully!`);
       setSelectedLeave(null);
       setRemarks('');
-      loadPendingL2();
+      loadPendingApprovals();
     } catch (error) {
       alert('❌ ' + (error.response?.data?.detail || 'Error processing request'));
       console.error(error);
@@ -132,19 +133,19 @@ function CEODashboard() {
   return (
     <div style={containerStyle}>
       <h1 style={titleStyle}>CEO Final Approvals
-        <span style={badge}>{pendingL2.length}</span>
+        <span style={badge}>{pendingApprovals.length}</span>
       </h1>
       <div style={subtitleStyle}>
         All team-approved leave requests pending your final approval.
       </div>
 
-      {pendingL2.length === 0 ? (
+      {pendingApprovals.length === 0 ? (
         <div style={emptyState}>
           <div style={{ fontSize: 60, color: '#10B981' }}>🎉</div>
           <div>No pending final approvals. All caught up!</div>
         </div>
       ) : (
-        pendingL2.map((leave) => (
+        pendingApprovals.map((leave) => (
           <div key={leave.id} style={cardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 18 }}>
               {leave.employee_name}
@@ -157,10 +158,10 @@ function CEODashboard() {
               <b>Reason:</b> {leave.reason}
             </div>
             <div style={{ fontSize: 14, margin: '6px 0', color: '#10B981' }}>
-              <b>L1 Approved By:</b> {leave.l1_approved_by_name || 'Manager'}
+              <b>Approved By:</b> {leave.approved_by || 'Manager'}
             </div>
             <div style={{ fontSize: 13, color: '#888', fontStyle: 'italic', marginBottom: 10 }}>
-              {leave.l1_remarks ? `L1 Remarks: ${leave.l1_remarks}` : ''}
+              {leave.supervisor_remarks ? `Remarks: ${leave.supervisor_remarks}` : ''}
             </div>
             <div style={actionsStyle}>
               <button style={approveBtn} onClick={() => handleApproveClick(leave)}>✓ Approve (Final)</button>
@@ -170,18 +171,21 @@ function CEODashboard() {
         ))
       )}
 
-      {/* Approve/Reject Modal */}
       {selectedLeave && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.2)',
-          zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}
-          onClick={() => !submitting && setSelectedLeave(null)}>
-          <div style={{
-            background: "#fff", borderRadius: 8, boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
-            padding: 32, width: '95%', maxWidth: 440, position: 'relative'
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.2)',
+            zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
-            onClick={(e) => e.stopPropagation()}>
+          onClick={() => !submitting && setSelectedLeave(null)}
+        >
+          <div
+            style={{
+              background: "#fff", borderRadius: 8, boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
+              padding: 32, width: '95%', maxWidth: 440, position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 style={{ color: actionType === 'approve' ? "#10B981" : "#EF4444", fontWeight: 700, marginBottom: 8 }}>
               {actionType === 'approve' ? 'Final Approve' : 'Reject'} Leave
             </h2>
@@ -191,9 +195,9 @@ function CEODashboard() {
             <div style={{ color: '#666', marginBottom: 8, fontSize: 14 }}>
               {selectedLeave.start_date} to {selectedLeave.end_date} ({selectedLeave.days} days)
               <br />
-              L1 Approved by: {selectedLeave.l1_approved_by_name}
+              Approved by: {selectedLeave.approved_by || 'Manager'}
               <br />
-              L1 Remarks: <i>{selectedLeave.l1_remarks}</i>
+              Remarks: <i>{selectedLeave.supervisor_remarks}</i>
             </div>
             <label style={{ fontWeight: 500, fontSize: 14 }}>Your Remarks *</label>
             <textarea

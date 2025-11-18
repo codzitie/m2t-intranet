@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
+from fastapi import Body
 from datetime import date, datetime, timedelta
 from database import get_db, User, LeaveType, LeaveBalance, LeaveApplication, Notification
 from schemas import (
@@ -247,8 +248,8 @@ def apply_leave(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Apply for leave"""
-    
+    """Apply for leave - One-level approval only"""
+
     # Validate dates
     if data.end_date < data.start_date:
         raise HTTPException(
@@ -258,7 +259,6 @@ def apply_leave(
     
     # Calculate working days
     days = calculate_working_days(data.start_date, data.end_date)
-    
     if days == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -271,42 +271,38 @@ def apply_leave(
         LeaveBalance.leave_type_id == data.leave_type_id,
         LeaveBalance.year == date.today().year
     ).first()
-    
     if not balance:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Leave balance not found"
         )
-    
     if balance.remaining < days:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Insufficient leave balance. You have {balance.remaining} days remaining, but requested {days} days."
         )
     
-    # Get leave type
+    # Get leave type details
     leave_type = db.query(LeaveType).filter(LeaveType.id == data.leave_type_id).first()
-    
-    # Create leave application with L1/L2 status initialized
-    new_leave = LeaveApplication(
-    user_id=current_user.id,
-    leave_type_id=data.leave_type_id,
-    start_date=data.start_date,
-    end_date=data.end_date,
-    days=days,
-    reason=data.reason,
-    status="Pending",
-    l1_status="Pending",  
-    l2_status="Pending",
-    l1_approved_by=current_user.supervisor_id  # ✅ Set initial L1 approver
-)
 
+    # Create leave application with single approval status
+    new_leave = LeaveApplication(
+        user_id=current_user.id,
+        leave_type_id=data.leave_type_id,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        days=days,
+        reason=data.reason,
+        status="Pending",   # single level approval
+        approved_by=None,
+        approved_on=None
+    )
     
     db.add(new_leave)
     db.commit()
     db.refresh(new_leave)
-    
-    # Create notification for supervisor/manager (L1)
+
+    # Notify the supervisor/manager for approval
     if current_user.supervisor_id:
         notification = Notification(
             user_id=current_user.supervisor_id,
@@ -330,10 +326,9 @@ def apply_leave(
         status=new_leave.status,
         supervisor_remarks=new_leave.supervisor_remarks,
         applied_on=new_leave.applied_on,
-        approved_on=new_leave.approved_on,
-        l1_status=new_leave.l1_status,
-        l2_status=new_leave.l2_status
+        approved_on=new_leave.approved_on
     )
+
 
 
 @app.get("/api/leave/history", response_model=List[LeaveApplicationResponse])
@@ -345,25 +340,11 @@ def get_leave_history(
     leaves = db.query(LeaveApplication).filter(
         LeaveApplication.user_id == current_user.id
     ).order_by(LeaveApplication.applied_on.desc()).all()
-    
+
     result = []
     for leave in leaves:
         leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
-        
-        # Get L1 approver name
-        l1_approver_name = None
-        if leave.l1_approved_by:
-            l1_approver = db.query(User).filter(User.id == leave.l1_approved_by).first()
-            if l1_approver:
-                l1_approver_name = l1_approver.name
-        
-        # Get L2 approver name
-        l2_approver_name = None
-        if leave.l2_approved_by:
-            l2_approver = db.query(User).filter(User.id == leave.l2_approved_by).first()
-            if l2_approver:
-                l2_approver_name = l2_approver.name
-        
+
         result.append(LeaveApplicationResponse(
             id=leave.id,
             user_id=leave.user_id,
@@ -377,20 +358,12 @@ def get_leave_history(
             status=leave.status,
             supervisor_remarks=leave.supervisor_remarks,
             applied_on=leave.applied_on,
-            approved_on=leave.approved_on,
-            l1_status=leave.l1_status,
-            l1_approved_by=leave.l1_approved_by,
-            l1_approved_by_name=l1_approver_name,
-            l1_approved_on=leave.l1_approved_on,
-            l1_remarks=leave.l1_remarks,
-            l2_status=leave.l2_status,
-            l2_approved_by=leave.l2_approved_by,
-            l2_approved_by_name=l2_approver_name,
-            l2_approved_on=leave.l2_approved_on,
-            l2_remarks=leave.l2_remarks
+            approved_on=leave.approved_on
         ))
-    
+
     return result
+
+
 
 
 # ============= L1 APPROVAL ENDPOINTS (Manager/Team Lead) =============
@@ -400,13 +373,10 @@ def get_pending_l1_approvals(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("approve_team_leaves"))
 ):
-    """Get pending L1 (Manager) approvals"""
-    
-    # Get leaves pending L1 approval where l1_approved_by matches current user
+    """Get all pending approvals assigned to the current user"""
     leaves = db.query(LeaveApplication).filter(
-        LeaveApplication.l1_status == "Pending",
-        LeaveApplication.status == "Pending",
-        LeaveApplication.l1_approved_by == current_user.id  # ✅ ONLY check l1_approved_by
+    LeaveApplication.status == "Pending",
+    LeaveApplication.approved_by == current_user.id  # Show based on new approver
     ).order_by(LeaveApplication.applied_on.desc()).all()
     
     result = []
@@ -427,13 +397,9 @@ def get_pending_l1_approvals(
             status=leave.status,
             supervisor_remarks=leave.supervisor_remarks,
             applied_on=leave.applied_on,
-            approved_on=leave.approved_on,
-            l1_status=leave.l1_status,
-            l2_status=leave.l2_status
+            approved_on=leave.approved_on
         ))
-    
     return result
-
 
 
 @app.put("/api/approvals/l1-approve/{leave_id}", response_model=LeaveApplicationResponse)
@@ -443,51 +409,31 @@ def l1_approve_leave(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("approve_team_leaves"))
 ):
-    """L1 Approval by Manager"""
-    
+    """Approve leave - single-level approval"""
     leave = db.query(LeaveApplication).filter(LeaveApplication.id == leave_id).first()
     if not leave:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Leave application not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Leave application not found")
     
-    # Check if this user is the supervisor
-    if leave.l1_approved_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not assigned to approve this leave"
-    )
+    # Check if current user is the assigned approver
+    if leave.approved_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to approve this leave")
     
-    employee = db.query(User).filter(User.id == leave.user_id).first()
+    # Update approval
+    leave.status = "Approved"
+    leave.approved_by = current_user.id
+    leave.approved_on = datetime.utcnow()
+    leave.supervisor_remarks = data.remarks
     
-    # Update L1 approval
-    leave.l1_status = "Approved"
-    leave.l1_approved_by = current_user.id
-    leave.l1_approved_on = datetime.utcnow()
-    leave.l1_remarks = data.remarks
-    leave.status = "L1-Approved"  # Update overall status
-    
-    # Create notification for employee
+    # Create notification for user
     leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
+    user = db.query(User).filter(User.id == leave.user_id).first()
     notification = Notification(
         user_id=leave.user_id,
-        type="leave_l1_approved",
-        message=f"Your {leave_type.name} was approved by {current_user.name}. Pending CEO approval.",
+        type="leave_approved",
+        message=f"Your {leave_type.name} has been approved by {current_user.name}",
         related_leave_id=leave.id
     )
     db.add(notification)
-    
-    # Notify CEO (find user with role='CEO')
-    ceo = db.query(User).filter(User.role == "CEO").first()
-    if ceo:
-        ceo_notification = Notification(
-            user_id=ceo.id,
-            type="leave_pending_l2",
-            message=f"{employee.name} leave ({leave_type.name}) approved by {current_user.name}. Awaiting your final approval.",
-            related_leave_id=leave.id
-        )
-        db.add(ceo_notification)
     
     db.commit()
     db.refresh(leave)
@@ -495,7 +441,7 @@ def l1_approve_leave(
     return LeaveApplicationResponse(
         id=leave.id,
         user_id=leave.user_id,
-        employee_name=employee.name,
+        employee_name=user.name,
         leave_type=leave_type.name,
         leave_type_id=leave.leave_type_id,
         start_date=leave.start_date,
@@ -505,15 +451,8 @@ def l1_approve_leave(
         status=leave.status,
         supervisor_remarks=leave.supervisor_remarks,
         applied_on=leave.applied_on,
-        approved_on=leave.approved_on,
-        l1_status=leave.l1_status,
-        l1_approved_by=leave.l1_approved_by,
-        l1_approved_by_name=current_user.name,
-        l1_approved_on=leave.l1_approved_on,
-        l1_remarks=leave.l1_remarks,
-        l2_status=leave.l2_status
+        approved_on=leave.approved_on
     )
-
 
 @app.put("/api/approvals/l1-reject/{leave_id}", response_model=LeaveApplicationResponse)
 def l1_reject_leave(
@@ -522,34 +461,24 @@ def l1_reject_leave(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("approve_team_leaves"))
 ):
-    """L1 Rejection by Manager"""
-    
+    """Reject leave - single-level rejection"""
     leave = db.query(LeaveApplication).filter(LeaveApplication.id == leave_id).first()
     if not leave:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Leave application not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Leave application not found")
     
-    # Check if this user is the supervisor
-    if leave.l1_approved_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not assigned to reject this leave"
-        )
+    # Check if current user is the assigned approver
+    if leave.approved_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to reject this leave")
     
-    employee = db.query(User).filter(User.id == leave.user_id).first()
-    
-    # Update L1 rejection
-    leave.l1_status = "Rejected"
-    leave.l1_approved_by = current_user.id
-    leave.l1_approved_on = datetime.utcnow()
-    leave.l1_remarks = data.remarks
-    leave.status = "Rejected"  # Overall status
+    # Update rejection
+    leave.status = "Rejected"
+    leave.approved_by = current_user.id
+    leave.approved_on = datetime.utcnow()
     leave.supervisor_remarks = data.remarks
     
-    # Create notification for employee
+    # Create notification
     leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
+    user = db.query(User).filter(User.id == leave.user_id).first()
     notification = Notification(
         user_id=leave.user_id,
         type="leave_rejected",
@@ -564,7 +493,7 @@ def l1_reject_leave(
     return LeaveApplicationResponse(
         id=leave.id,
         user_id=leave.user_id,
-        employee_name=employee.name,
+        employee_name=user.name,
         leave_type=leave_type.name,
         leave_type_id=leave.leave_type_id,
         start_date=leave.start_date,
@@ -574,238 +503,7 @@ def l1_reject_leave(
         status=leave.status,
         supervisor_remarks=leave.supervisor_remarks,
         applied_on=leave.applied_on,
-        approved_on=leave.approved_on,
-        l1_status=leave.l1_status,
-        l1_approved_by=leave.l1_approved_by,
-        l1_approved_by_name=current_user.name,
-        l1_approved_on=leave.l1_approved_on,
-        l1_remarks=leave.l1_remarks,
-        l2_status=leave.l2_status
-    )
-
-
-# ============= L2 APPROVAL ENDPOINTS (CEO) =============
-
-
-@app.get("/api/approvals/pending-l2", response_model=List[LeaveApplicationResponse])
-def get_pending_l2_approvals(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get pending L2 (CEO) approvals"""
-    
-    # Only CEO can access this
-    if current_user.role != "CEO":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only CEO can access L2 approvals"
-        )
-    
-    # Get leaves pending L2 approval (L1 approved, L2 pending)
-    leaves = db.query(LeaveApplication).filter(
-        LeaveApplication.l1_status == "Approved",
-        LeaveApplication.l2_status == "Pending",
-        LeaveApplication.status == "L1-Approved"
-    ).order_by(LeaveApplication.l1_approved_on.desc()).all()
-    
-    result = []
-    for leave in leaves:
-        user = db.query(User).filter(User.id == leave.user_id).first()
-        leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
-        
-        # Get L1 approver name
-        l1_approver_name = None
-        if leave.l1_approved_by:
-            l1_approver = db.query(User).filter(User.id == leave.l1_approved_by).first()
-            if l1_approver:
-                l1_approver_name = l1_approver.name
-        
-        result.append(LeaveApplicationResponse(
-            id=leave.id,
-            user_id=leave.user_id,
-            employee_name=user.name,
-            leave_type=leave_type.name,
-            leave_type_id=leave.leave_type_id,
-            start_date=leave.start_date,
-            end_date=leave.end_date,
-            days=leave.days,
-            reason=leave.reason,
-            status=leave.status,
-            supervisor_remarks=leave.supervisor_remarks,
-            applied_on=leave.applied_on,
-            approved_on=leave.approved_on,
-            l1_status=leave.l1_status,
-            l1_approved_by=leave.l1_approved_by,
-            l1_approved_by_name=l1_approver_name,
-            l1_approved_on=leave.l1_approved_on,
-            l1_remarks=leave.l1_remarks,
-            l2_status=leave.l2_status
-        ))
-    
-    return result
-
-
-@app.put("/api/approvals/l2-approve/{leave_id}", response_model=LeaveApplicationResponse)
-def l2_approve_leave(
-    leave_id: str,
-    data: ApproveRejectRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """L2 Final Approval by CEO"""
-    
-    # Only CEO can do L2 approval
-    if current_user.role != "CEO":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only CEO can perform L2 approval"
-        )
-    
-    leave = db.query(LeaveApplication).filter(LeaveApplication.id == leave_id).first()
-    if not leave:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Leave application not found"
-        )
-    
-    # Check if L1 is approved
-    if leave.l1_status != "Approved":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Leave must be L1 approved before L2 approval"
-        )
-    
-    # Update L2 approval
-    leave.l2_status = "Approved"
-    leave.l2_approved_by = current_user.id
-    leave.l2_approved_on = datetime.utcnow()
-    leave.l2_remarks = data.remarks
-    leave.status = "Approved"  # FINAL STATUS
-    leave.approved_by = current_user.id
-    leave.approved_on = datetime.utcnow()
-    leave.supervisor_remarks = f"L1: {leave.l1_remarks} | L2: {data.remarks}"
-    
-    # Update leave balance
-    balance = db.query(LeaveBalance).filter(
-        LeaveBalance.user_id == leave.user_id,
-        LeaveBalance.leave_type_id == leave.leave_type_id,
-        LeaveBalance.year == date.today().year
-    ).first()
-    
-    if balance:
-        balance.used += leave.days
-        balance.remaining -= leave.days
-    
-    # Create notification for employee
-    leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
-    employee = db.query(User).filter(User.id == leave.user_id).first()
-    notification = Notification(
-        user_id=leave.user_id,
-        type="leave_approved",
-        message=f"Your {leave_type.name} has been FINALLY APPROVED by CEO",
-        related_leave_id=leave.id
-    )
-    db.add(notification)
-    
-    db.commit()
-    db.refresh(leave)
-    
-    return LeaveApplicationResponse(
-        id=leave.id,
-        user_id=leave.user_id,
-        employee_name=employee.name,
-        leave_type=leave_type.name,
-        leave_type_id=leave.leave_type_id,
-        start_date=leave.start_date,
-        end_date=leave.end_date,
-        days=leave.days,
-        reason=leave.reason,
-        status=leave.status,
-        supervisor_remarks=leave.supervisor_remarks,
-        applied_on=leave.applied_on,
-        approved_on=leave.approved_on,
-        l1_status=leave.l1_status,
-        l1_approved_by=leave.l1_approved_by,
-        l1_approved_on=leave.l1_approved_on,
-        l1_remarks=leave.l1_remarks,
-        l2_status=leave.l2_status,
-        l2_approved_by=leave.l2_approved_by,
-        l2_approved_by_name=current_user.name,
-        l2_approved_on=leave.l2_approved_on,
-        l2_remarks=leave.l2_remarks
-    )
-
-
-@app.put("/api/approvals/l2-reject/{leave_id}", response_model=LeaveApplicationResponse)
-def l2_reject_leave(
-    leave_id: str,
-    data: ApproveRejectRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """L2 Rejection by CEO"""
-    
-    # Only CEO can do L2 rejection
-    if current_user.role != "CEO":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only CEO can perform L2 rejection"
-        )
-    
-    leave = db.query(LeaveApplication).filter(LeaveApplication.id == leave_id).first()
-    if not leave:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Leave application not found"
-        )
-    
-    # Update L2 rejection
-    leave.l2_status = "Rejected"
-    leave.l2_approved_by = current_user.id
-    leave.l2_approved_on = datetime.utcnow()
-    leave.l2_remarks = data.remarks
-    leave.status = "Rejected"  # Overall status
-    leave.approved_by = current_user.id
-    leave.approved_on = datetime.utcnow()
-    leave.supervisor_remarks = f"L1: {leave.l1_remarks} | L2 (CEO): {data.remarks}"
-    
-    # Create notification for employee
-    leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
-    employee = db.query(User).filter(User.id == leave.user_id).first()
-    notification = Notification(
-        user_id=leave.user_id,
-        type="leave_rejected",
-        message=f"Your {leave_type.name} was rejected by CEO",
-        related_leave_id=leave.id
-    )
-    db.add(notification)
-    
-    db.commit()
-    db.refresh(leave)
-    
-    return LeaveApplicationResponse(
-        id=leave.id,
-        user_id=leave.user_id,
-        employee_name=employee.name,
-        leave_type=leave_type.name,
-        leave_type_id=leave.leave_type_id,
-        start_date=leave.start_date,
-        end_date=leave.end_date,
-        days=leave.days,
-        reason=leave.reason,
-        status=leave.status,
-        supervisor_remarks=leave.supervisor_remarks,
-        applied_on=leave.applied_on,
-        approved_on=leave.approved_on,
-        l1_status=leave.l1_status,
-        l1_approved_by=leave.l1_approved_by,
-        l1_approved_on=leave.l1_approved_on,
-        l1_remarks=leave.l1_remarks,
-        l2_status=leave.l2_status,
-        l2_approved_by=leave.l2_approved_by,
-        l2_approved_by_name=current_user.name,
-        l2_approved_on=leave.l2_approved_on,
-        l2_remarks=leave.l2_remarks
+        approved_on=leave.approved_on
     )
 
 
@@ -996,12 +694,12 @@ def get_all_leaves(
 ):
     """Get all leave applications (HR only)"""
     leaves = db.query(LeaveApplication).order_by(LeaveApplication.applied_on.desc()).all()
-    
+
     result = []
     for leave in leaves:
         user = db.query(User).filter(User.id == leave.user_id).first()
         leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
-        
+
         result.append(LeaveApplicationResponse(
             id=leave.id,
             user_id=leave.user_id,
@@ -1015,11 +713,9 @@ def get_all_leaves(
             status=leave.status,
             supervisor_remarks=leave.supervisor_remarks,
             applied_on=leave.applied_on,
-            approved_on=leave.approved_on,
-            l1_status=leave.l1_status,
-            l2_status=leave.l2_status
+            approved_on=leave.approved_on
         ))
-    
+
     return result
 
 
@@ -1113,20 +809,102 @@ class RedirectL1Request(BaseModel):
     leave_id: str
     new_manager_id: str
 
-@app.post("/api/leave/redirect-l1")
-def redirect_l1(
-    data: RedirectL1Request,
+class RedirectLeaveRequest(BaseModel):
+    leave_id: str
+    new_manager_id: str
+
+@app.post("/api/leave/redirect")
+def redirect_leave(
+    data: RedirectLeaveRequest = Body(...),
     db: Session = Depends(get_db),
     user=Depends(get_current_hr_user)
 ):
-    leave_id = data.leave_id
-    new_manager_id = data.new_manager_id
-    leave = db.query(LeaveApplication).filter(LeaveApplication.id == leave_id).first()
+    leave = db.query(LeaveApplication).filter(LeaveApplication.id == data.leave_id).first()
     if not leave:
         raise HTTPException(status_code=404, detail="Leave application not found")
-    leave.l1_approved_by = new_manager_id
+
+    # Update current approver
+    leave.approved_by = data.new_manager_id
+
+    # Reset approval-related fields as needed
+    leave.status = "Pending"
+    leave.approved_on = None
+    leave.supervisor_remarks = None
+
     db.commit()
     return {"success": True}
+
+# For leave calendar (all approved leaves, for everyone)
+@app.get("/api/leave/calendar", response_model=List[LeaveApplicationResponse])
+def get_leave_calendar(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get current user's own approved leaves for calendar"""
+    leaves = db.query(LeaveApplication).filter(
+        LeaveApplication.user_id == current_user.id,
+        LeaveApplication.status == "Approved"
+    ).all()
+    
+    result = []
+    for leave in leaves:
+        leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
+        result.append(LeaveApplicationResponse(
+            id=leave.id,
+            user_id=leave.user_id,
+            employee_name=current_user.name,
+            leave_type=leave_type.name,
+            leave_type_id=leave.leave_type_id,
+            start_date=leave.start_date,
+            end_date=leave.end_date,
+            days=leave.days,
+            reason=leave.reason,
+            status=leave.status,
+            supervisor_remarks=leave.supervisor_remarks,
+            applied_on=leave.applied_on,
+            approved_on=leave.approved_on
+        ))
+    return result
+
+# For managers: see approved leaves of their reportees
+@app.get("/api/leave/team-leaves", response_model=List[LeaveApplicationResponse])
+def get_team_leaves(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("approve_team_leaves"))
+):
+    """Get manager's own + team's approved leaves for calendar"""
+    # Find direct reports
+    team_ids = [user.id for user in db.query(User).filter(User.supervisor_id == current_user.id).all()]
+    # Include manager's own ID
+    team_ids.append(current_user.id)
+    
+    # Only include approved leaves
+    leaves = db.query(LeaveApplication).filter(
+        LeaveApplication.status == "Approved",
+        LeaveApplication.user_id.in_(team_ids)
+    ).all()
+    
+    result = []
+    for leave in leaves:
+        user = db.query(User).filter(User.id == leave.user_id).first()
+        leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
+        result.append(LeaveApplicationResponse(
+            id=leave.id,
+            user_id=leave.user_id,
+            employee_name=user.name,
+            leave_type=leave_type.name,
+            leave_type_id=leave.leave_type_id,
+            start_date=leave.start_date,
+            end_date=leave.end_date,
+            days=leave.days,
+            reason=leave.reason,
+            status=leave.status,
+            supervisor_remarks=leave.supervisor_remarks,
+            applied_on=leave.applied_on,
+            approved_on=leave.approved_on
+        ))
+    return result
+
 
 if __name__ == "__main__":
     import uvicorn

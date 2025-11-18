@@ -41,11 +41,7 @@ function LeaveDashboard() {
       ];
 
       if (permissions.includes('approve_team_leaves')) {
-        if (user.role === 'CEO') {
-          requests.push(api.getPendingL2Approvals());
-        } else {
-          requests.push(api.getPendingL1Approvals());
-        }
+        requests.push(api.getPendingL1Approvals());
       }
 
       const responses = await Promise.all(requests);
@@ -84,28 +80,6 @@ function LeaveDashboard() {
     return <span style={statusStyles[status]}>{status}</span>;
   };
 
-  const containerStyle = {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '40px 20px',
-  };
-
-  const headerStyle = {
-    marginBottom: '30px',
-  };
-
-  const titleStyle = {
-    fontSize: '28px',
-    fontWeight: '600',
-    color: '#004aad',
-    marginBottom: '8px',
-  };
-
-  const subtitleStyle = {
-    fontSize: '16px',
-    color: '#666',
-  };
-
   if (!user) {
     return (
       <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>
@@ -128,7 +102,7 @@ function LeaveDashboard() {
   }
 
   return (
-    <div style={containerStyle}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px 20px' }}>
       {/* Error Message */}
       {error && (
         <div
@@ -146,9 +120,13 @@ function LeaveDashboard() {
       )}
 
       {/* Header Section */}
-      <div style={headerStyle}>
-        <h1 style={titleStyle}>Welcome, {user.name}!</h1>
-        <p style={subtitleStyle}>Manage your leave applications and view your balance</p>
+      <div style={{ marginBottom: '30px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: '600', color: '#004aad', marginBottom: '8px' }}>
+          Welcome, {user.name}!
+        </h1>
+        <p style={{ fontSize: '16px', color: '#666' }}>
+          Manage your leave applications and view your balance
+        </p>
       </div>
 
       {/* Leave Balance Cards */}
@@ -180,8 +158,12 @@ function LeaveDashboard() {
               e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
             }}
           >
-            <div style={{ fontSize: '14px', color: '#666', marginBottom: '12px', fontWeight: '500' }}>{leave.leave_type}</div>
-            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#004aad', marginBottom: '8px' }}>{leave.remaining}</div>
+            <div style={{ fontSize: '14px', color: '#666', marginBottom: '12px', fontWeight: '500' }}>
+              {leave.leave_type}
+            </div>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#004aad', marginBottom: '8px' }}>
+              {leave.remaining}
+            </div>
             <div style={{ fontSize: '14px', color: '#888' }}>
               Available • Used: {leave.used}/{leave.total}
             </div>
@@ -199,7 +181,12 @@ function LeaveDashboard() {
                 style={{
                   width: `${(leave.used / leave.total) * 100}%`,
                   height: '100%',
-                  backgroundColor: leave.used / leave.total > 0.7 ? '#EF4444' : leave.used / leave.total > 0.5 ? '#F59E0B' : '#10B981',
+                  backgroundColor:
+                    leave.used / leave.total > 0.7
+                      ? '#EF4444'
+                      : leave.used / leave.total > 0.5
+                      ? '#F59E0B'
+                      : '#10B981',
                   transition: 'width 0.3s ease',
                 }}
               />
@@ -263,29 +250,28 @@ function LeaveDashboard() {
           View Leave History
         </button>
 
-        {(permissions.includes('approve_team_leaves') || permissions.includes('manage_hr')) && (
-          <button
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: '500',
-              border: '1px solid #10B981',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              color: '#10B981',
-              backgroundColor: 'white',
-            }}
-            onClick={() => navigate('/leave/calendar')}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = '#f0fdf4';
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = 'white';
-            }}
-          >
-            📆 View Leave Calendar
-          </button>
-        )}
+        {/* Calendar button now visible to all users */}
+        <button
+          style={{
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: '500',
+            border: '1px solid #10B981',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            color: '#10B981',
+            backgroundColor: 'white',
+          }}
+          onClick={() => navigate('/leave/calendar')}
+          onMouseEnter={(e) => {
+            e.target.style.backgroundColor = '#f0fdf4';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.backgroundColor = 'white';
+          }}
+        >
+          📆 View Leave Calendar
+        </button>
       </div>
 
       {(permissions.includes('approve_team_leaves') || permissions.includes('manage_hr')) && (
@@ -448,21 +434,21 @@ function LeaveDashboard() {
                 >
                   {showSupervisorView ? '← Back to My Dashboard' : 'View Team Approvals →'}
                 </button>
-              </div>
 
-              {pendingApprovalsCount === 0 && !showSupervisorView && (
-                <div
-                  style={{
-                    textAlign: 'center',
-                    padding: '20px',
-                    backgroundColor: '#f0f9ff',
-                    borderRadius: '6px',
-                    color: '#0369a1',
-                  }}
-                >
-                  ✅ All caught up! No pending approvals at the moment.
-                </div>
-              )}
+                {pendingApprovalsCount === 0 && !showSupervisorView && (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '20px',
+                      backgroundColor: '#f0f9ff',
+                      borderRadius: '6px',
+                      color: '#0369a1',
+                    }}
+                  >
+                    ✅ All caught up! No pending approvals at the moment.
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </>

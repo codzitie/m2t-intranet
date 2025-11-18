@@ -19,15 +19,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-
 api.interceptors.response.use(
   response => response,
   error => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      // Optionally show a toast or alert here
-      window.location.href = '/login'; // full page reload for security
+      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
@@ -77,6 +75,19 @@ export const getLeaveHistory = async () => {
   return response.data;
 };
 
+// ========== CALENDAR & TEAM LEAVE ===========
+// For calendar: org-wide approved leaves (for all employees)
+export const getLeaveCalendar = async () => {
+  const response = await api.get('/leave/calendar');
+  return response.data;
+};
+
+// For managers: team members' approved leaves calendar
+export const getTeamLeaves = async () => {
+  const response = await api.get('/leave/team-leaves');
+  return response.data;
+};
+
 // ============= APPROVALS =============
 // L1 Manager approvals
 export const getPendingL1Approvals = async () => {
@@ -91,22 +102,6 @@ export const l1ApproveLeave = async (leaveId, remarks) => {
 
 export const l1RejectLeave = async (leaveId, remarks) => {
   const response = await api.put(`/approvals/l1-reject/${leaveId}`, { remarks });
-  return response.data;
-};
-
-// L2 CEO approvals
-export const getPendingL2Approvals = async () => {
-  const response = await api.get('/approvals/pending-l2');
-  return response.data;
-};
-
-export const l2ApproveLeave = async (leaveId, remarks) => {
-  const response = await api.put(`/approvals/l2-approve/${leaveId}`, { remarks });
-  return response.data;
-};
-
-export const l2RejectLeave = async (leaveId, remarks) => {
-  const response = await api.put(`/approvals/l2-reject/${leaveId}`, { remarks });
   return response.data;
 };
 
@@ -158,9 +153,9 @@ export const markNotificationRead = async (notificationId) => {
   return response.data;
 };
 
-// ============= REDIRECT L1 APPROVAL =============
-export const redirectL1Approval = async (leaveId, newManagerId) => {
-  const response = await api.post('/leave/redirect-l1', {
+// ============= REDIRECT APPROVAL =============
+export const redirectLeaveApproval = async (leaveId, newManagerId) => {
+  const response = await api.post('/leave/redirect', {
     leave_id: leaveId,
     new_manager_id: newManagerId
   });

@@ -6,6 +6,7 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
   const { user } = useUser();
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [leaveBalance, setLeaveBalance] = useState([]);
+  const [leaveHistory, setLeaveHistory] = useState([]); // Store user's leave history
   const [formData, setFormData] = useState({
     leaveTypeId: '',
     startDate: '',
@@ -22,13 +23,15 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
 
   const loadInitialData = async () => {
     try {
-      const [types, balance] = await Promise.all([
+      const [types, balance, history] = await Promise.all([
         api.getLeaveTypes(),
         api.getLeaveBalance(),
+        api.getLeaveHistory(), // Fetch leave history
       ]);
 
       setLeaveTypes(types || []);
       setLeaveBalance(balance || []);
+      setLeaveHistory(history || []);
     } catch (error) {
       console.error('Error loading data:', error);
       alert('Failed to load leave types and balance');
@@ -38,10 +41,35 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
-    // Clear error for this field
     if (errors[name]) {
       setErrors({ ...errors, [name]: '' });
     }
+  };
+
+  // Check if selected dates overlap with existing leave
+  const checkDateOverlap = (startDate, endDate) => {
+    const newStart = new Date(startDate);
+    const newEnd = new Date(endDate);
+
+    // Filter leaves with status 'Pending' or 'Approved'
+    const activeLeaves = leaveHistory.filter(
+      (leave) => leave.status === 'Pending' || leave.status === 'Approved'
+    );
+
+    for (const leave of activeLeaves) {
+      const existingStart = new Date(leave.start_date);
+      const existingEnd = new Date(leave.end_date);
+
+      // Check if dates overlap
+      if (newStart <= existingEnd && newEnd >= existingStart) {
+        return {
+          overlap: true,
+          leave: leave,
+        };
+      }
+    }
+
+    return { overlap: false };
   };
 
   const validateForm = () => {
@@ -59,6 +87,17 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
     if (formData.startDate && formData.endDate && formData.startDate > formData.endDate) {
       newErrors.endDate = 'End date must be after start date';
     }
+
+    // Check for date overlap with existing leaves
+    if (formData.startDate && formData.endDate) {
+      const overlapCheck = checkDateOverlap(formData.startDate, formData.endDate);
+      if (overlapCheck.overlap) {
+        newErrors.startDate = `You already have a ${overlapCheck.leave.status.toLowerCase()} leave from ${
+          overlapCheck.leave.start_date
+        } to ${overlapCheck.leave.end_date}`;
+      }
+    }
+
     if (!formData.reason.trim()) {
       newErrors.reason = 'Please provide a reason for leave';
     }
@@ -80,7 +119,7 @@ function ApplyLeaveForm({ onClose, onSuccess }) {
     setSubmitting(true);
 
     try {
-      const response = await api.applyLeave({
+      await api.applyLeave({
         leaveTypeId: parseInt(formData.leaveTypeId),
         startDate: formData.startDate,
         endDate: formData.endDate,

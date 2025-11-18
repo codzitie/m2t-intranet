@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useUser } from '../context/UserContext';
 import * as api from '../services/api';
 
 function LeaveCalendar() {
+  const { user } = useUser();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [leaveData, setLeaveData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,12 +16,21 @@ function LeaveCalendar() {
   const loadLeaveData = async () => {
     try {
       setLoading(true);
-      const response = await api.getAllLeaves();
-      if (response) {
-        // Filter only approved leaves
-        const approvedLeaves = response.filter(leave => leave.status === 'Approved');
-        setLeaveData(approvedLeaves);
+      let response;
+      
+      if (user?.permissions?.includes('manage_hr')) {
+        // HR: see all approved leaves
+        response = await api.getAllLeaves();
+        response = response.filter(leave => leave.status === 'Approved');
+      } else if (user?.permissions?.includes('approve_team_leaves')) {
+        // Manager: see their own + team's approved leaves
+        response = await api.getTeamLeaves();
+      } else {
+        // Employee: see only their own approved leaves
+        response = await api.getLeaveCalendar();
       }
+      
+      setLeaveData(response || []);
     } catch (error) {
       console.error('Error loading calendar data:', error);
       alert('Failed to load calendar data');
