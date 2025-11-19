@@ -10,6 +10,7 @@ import CEODashboard from './CEODashboard';
 
 function LeaveDashboard() {
   const { user } = useUser();
+  const isHRAdmin = user.role === "HR" && user.email === "hrexample123@gmail.com";
   const navigate = useNavigate();
   const [leaveBalance, setLeaveBalance] = useState([]);
   const [recentLeaves, setRecentLeaves] = useState([]);
@@ -79,7 +80,7 @@ function LeaveDashboard() {
 
     return <span style={statusStyles[status]}>{status}</span>;
   };
-
+  
   if (!user) {
     return (
       <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>
@@ -95,11 +96,23 @@ function LeaveDashboard() {
       </div>
     );
   }
-
+  if (isHRAdmin) {
+    return <HRDashboard />;
+  }
   // Show CEO Dashboard if user is CEO
   if (user.role === 'CEO') {
-    return <CEODashboard />;
-  }
+  return (
+    <>
+      {/* CEO - See full HR dashboard */}
+      <HRDashboard />
+      {/* CEO - See their own approval queue as a manager */}
+      <div style={{ marginTop: 64 }}>
+        <SupervisorDashboard onApprovalComplete={loadLeaveBalance} />
+      </div>
+    </>
+  );
+}
+
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px 20px' }}>

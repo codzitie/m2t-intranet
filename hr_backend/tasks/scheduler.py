@@ -3,6 +3,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
 from database import SessionLocal, TimesheetEntry, TimesheetUnlockRequest, User
+from database import LeaveType, LeaveBalance
 from email_service import send_timesheet_lock_notification
 import logging
 import time
@@ -289,6 +290,99 @@ def auto_mark_absent_for_locked_entries():
         db.close()
 
 
+def auto_increment_casual_leave():
+    """
+    Auto-increment Casual Leave by 1 for all employees every month.
+    - Max cap per year: 12
+    - Ensures a LeaveBalance row exists for current year (creates it if missing).
+    """
+    db = SessionLocal()
+    try:
+        year = date.today().year
+        # Find the Casual Leave type
+        casual_type = db.query(LeaveType).filter(LeaveType.name == 'Casual Leave').first()
+        if not casual_type:
+            logger.error("❌ Casual Leave type not found!")
+            return
+
+        users = db.query(User).all()
+        incremented = 0
+        for user in users:
+            balance = db.query(LeaveBalance).filter_by(
+                user_id=user.id, leave_type_id=casual_type.id, year=year
+            ).first()
+            if not balance:
+                # Create a new LeaveBalance if missing (safe for Jan 1 and new joiner edge cases)
+                balance = LeaveBalance(
+                    user_id=user.id,
+                    leave_type_id=casual_type.id,
+                    total=0,
+                    used=0,
+                    remaining=0,
+                    year=year
+                )
+                db.add(balance)
+                db.flush()  # get generated id if needed
+
+            if balance.total < 12:
+                balance.total += 1
+                balance.remaining += 1
+                incremented += 1
+
+        db.commit()
+        logger.info(f"✅ Casual Leave incremented by 1 for {incremented} users on {date.today()} (max capped at 12)")
+    except Exception as e:
+        logger.error(f"❌ Error in auto_increment_casual_leave: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def annual_reset_static_leaves():
+    db = SessionLocal()
+    try:
+        year = date.today().year
+        static_leave_types = ["Sick Leave", "Flexi Leave", "Earned Leave"]
+
+        users = db.query(User).all()
+        for user in users:
+            for lt_name in static_leave_types:
+                leave_type = db.query(LeaveType).filter(LeaveType.name == lt_name).first()
+                if not leave_type:
+                    continue
+                
+                balance = db.query(LeaveBalance).filter_by(
+                    user_id=user.id,
+                    leave_type_id=leave_type.id,
+                    year=year
+                ).first()
+
+                if not balance:
+                    # Create new if missing
+                    balance = LeaveBalance(
+                        user_id=user.id,
+                        leave_type_id=leave_type.id,
+                        total=leave_type.yearly_quota,
+                        used=0,
+                        remaining=leave_type.yearly_quota,
+                        year=year
+                    )
+                    db.add(balance)
+                else:
+                    # Reset existing balance for new year
+                    balance.total = leave_type.yearly_quota
+                    balance.used = 0
+                    balance.remaining = leave_type.yearly_quota
+                
+        db.commit()
+        logger.info(f"✅ Annual reset of static leave types completed for year {year}")
+    except Exception as e:
+        logger.error(f"❌ Error during annual reset of static leaves: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 # ============= SCHEDULER MANAGEMENT =============
 
 def start_scheduler():
@@ -325,6 +419,31 @@ def start_scheduler():
             max_instances=1,
             coalesce=True
         )
+
+          # ✅ JOB 3: AUTO-INCREMENT CASUAL LEAVE ON 1st OF EVERY MONTH
+        scheduler.add_job(
+            func=auto_increment_casual_leave,
+            trigger='cron',
+            day=1,        # Run on first day of every month
+            hour=0,       # Midnight
+            minute=3,     # 00:03 AM (a few minutes after the other jobs)
+            id='auto_increment_casual_leave',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+
+
+        scheduler.add_job(
+            func=annual_reset_static_leaves,
+            trigger='cron',
+            month=1, day=1, hour=0, minute=5,  # Jan 1, 00:05 AM
+            id='annual_reset_static_leaves',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+    )
+
         
         scheduler.start()
         

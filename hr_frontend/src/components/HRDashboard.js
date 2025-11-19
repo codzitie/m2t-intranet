@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import * as api from '../services/api';
+import { useNavigate } from 'react-router-dom';
 
 function HRDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [allRequests, setAllRequests] = useState([]);
   const [allBalances, setAllBalances] = useState([]);
@@ -343,6 +345,26 @@ function HRDashboard() {
       <div style={headerStyle}>
         <h1 style={titleStyle}>HR Dashboard</h1>
         <p style={subtitleStyle}>Manage company-wide leave requests and employee balances</p>
+      </div>
+
+      <div style={{ marginBottom: 24 }}>
+        <button
+          style={{
+            padding: '10px 24px',
+            fontSize: '16px',
+            fontWeight: 500,
+            border: '1px solid #10B981',
+            borderRadius: 6,
+            cursor: 'pointer',
+            color: '#10B981',
+            backgroundColor: '#F6FFFB',
+          }}
+          onClick={() => navigate('/leave/calendar')}
+          onMouseEnter={e => e.target.style.backgroundColor = '#e7f6ee'}
+          onMouseLeave={e => e.target.style.backgroundColor = '#F6FFFB'}
+        >
+          📆 View Leave Calendar
+        </button>
       </div>
 
       {/* Tabs */}

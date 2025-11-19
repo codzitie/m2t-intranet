@@ -42,38 +42,61 @@ function PayrollExport() {
 
   // FETCH ALL EMPLOYEE TIMESHEETS
   const fetchEmployeeTimesheets = async (usersList) => {
-    setLoading(true);
-    setError('');
-    try {
-      const year = new Date().getFullYear();
-      const month = new Date().getMonth() + 1;
-      const hrDashboard = await timesheetService.getHRDashboard(token);
-      const monthSummary = hrDashboard.month_summary || {};
-      const employeeList = [];
-      for (const employeeName in monthSummary) {
-        const empData = monthSummary[employeeName];
-        const userRecord = usersList.find(u => u.name === employeeName);
-        if (userRecord) {
-          employeeList.push({
-            id: userRecord.id,
-            name: employeeName,
-            email: userRecord.email,
-            totalHours: empData.total_hours,
-            filledDays: empData.filled,
-            pendingDays: empData.pending || 0,
-            lockedDays: empData.locked || 0,
-            workingDays: empData.filled + (empData.pending || 0) + (empData.locked || 0)
-          });
-        }
+  setLoading(true);
+  setError('');
+  try {
+    const year = new Date().getFullYear();
+    const month = new Date().getMonth() + 1;
+    const hrDashboard = await timesheetService.getHRDashboard(token);
+    const monthSummary = hrDashboard.month_summary || {};
+
+    const employeeList = [];
+
+    // ✅ ITERATE THROUGH ALL USERS (not just monthSummary)
+    for (const user of usersList) {
+      // Skip HR admin accounts if needed (optional)
+      if (user.role === 'HR' && user.email === 'hrexample123@gmail.com') {
+        continue;
       }
-      setPayrollData(employeeList);
-    } catch (err) {
-      console.error('Error fetching employee data:', err);
-      setError(err.detail || 'Failed to fetch employee data');
-    } finally {
-      setLoading(false);
+
+      const empData = monthSummary[user.name];
+
+      if (empData) {
+        // User has timesheet data
+        employeeList.push({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          totalHours: empData.total_hours || 0,
+          filledDays: empData.filled || 0,
+          pendingDays: empData.pending || 0,
+          lockedDays: empData.locked || 0,
+          workingDays: (empData.filled || 0) + (empData.pending || 0) + (empData.locked || 0)
+        });
+      } else {
+        // User has NO timesheet data - still include them with zeros
+        employeeList.push({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          totalHours: 0,
+          filledDays: 0,
+          pendingDays: 0,
+          lockedDays: 0,
+          workingDays: 0
+        });
+      }
     }
-  };
+
+    setPayrollData(employeeList);
+  } catch (err) {
+    console.error('Error fetching employee data:', err);
+    setError(err.detail || 'Failed to fetch employee data');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // FETCH DETAILED TIMESHEETS
   const fetchEmployeeDetailedTimesheets = async (employeeId, year, month) => {

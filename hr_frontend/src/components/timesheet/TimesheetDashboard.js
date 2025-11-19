@@ -16,6 +16,7 @@ function TimesheetDashboard() {
   const [activeTab, setActiveTab] = useState('timesheet');
   const [showManagerView, setShowManagerView] = useState(false);
   const [showAdminView, setShowAdminView] = useState(false);
+  const isHRAdmin = user?.role === "HR" && user?.email === "hrexample123@gmail.com";
   const [stats, setStats] = useState({
     filledDays: 0,
     pendingDays: 0,
@@ -501,6 +502,18 @@ function TimesheetDashboard() {
     return (
       <div style={loadingStyle}>
         Loading your timesheet...
+      </div>
+    );
+  }
+
+  if (isHRAdmin) {
+    return (
+      <div style={containerStyle}>
+        <div style={headerStyle}>
+          <h1 style={titleStyle}>HR Timesheet Management</h1>
+          <p style={subtitleStyle}>View and manage all employee timesheets</p>
+        </div>
+        <AdminTimesheetDashboard />
       </div>
     );
   }

@@ -294,7 +294,7 @@ def apply_leave(
         days=days,
         reason=data.reason,
         status="Pending",   # single level approval
-        approved_by=None,
+        approved_by=current_user.supervisor_id,
         approved_on=None
     )
     

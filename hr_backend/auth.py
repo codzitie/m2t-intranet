@@ -104,12 +104,12 @@ def get_user_permissions(role: str) -> list:
         "CEO": [
             "apply_leave", "view_own_balance", "view_own_history", 
             "approve_team_leaves", "view_team", "view_all_leaves",
-            "fill_timesheet", "view_own_timesheet", "view_all_timesheets",
+            "fill_timesheet", "view_own_timesheet", "view_all_timesheets","manage_hr",
         ],
         "Founder": [
             "apply_leave", "view_own_balance", "view_own_history", 
             "approve_team_leaves", "view_team", "view_all_leaves",
-            "fill_timesheet", "view_own_timesheet", "view_all_timesheets",
+            "fill_timesheet", "view_own_timesheet", "view_all_timesheets","manage_hr",
         ],
         "HR": [
             "apply_leave", "view_own_balance", "view_own_history", 
@@ -118,7 +118,7 @@ def get_user_permissions(role: str) -> list:
             "fill_timesheet", "view_own_timesheet", "view_all_timesheets",
             "lock_timesheet", "approve_unlock_requests",
         ]
-    }
+    }   
     return permissions.get(role, [])
 
 # Check if user has specific permission
