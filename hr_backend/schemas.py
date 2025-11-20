@@ -16,6 +16,7 @@ class RegisterRequest(BaseModel):
     department: Optional[str] = None
     designation: Optional[str] = None
     supervisor_id: Optional[str] = None
+    employment_type: Optional[str]
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -35,6 +36,7 @@ class UserResponse(BaseModel):
     permissions: List[str]
     last_login: Optional[str] = None
     prev_login: Optional[str] = None
+    employment_type: Optional[str]
     
     class Config:
         from_attributes = True

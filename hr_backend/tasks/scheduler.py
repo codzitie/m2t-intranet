@@ -73,13 +73,18 @@ def auto_lock_pending_entries():
         # STEP 2: AUTO-LOCK PENDING ENTRIES
         # ============================================================
         logger.info(f"🔒 STEP 2: Locking pending entries older than {cutoff_date}...")
+
+        full_time_user_ids = [
+            user.id for user in db.query(User.id).filter(User.employment_type == 'F').all()
+        ]
         
         # Find all unfilled entries older than 2 days
         unfilled_entries = db.query(TimesheetEntry).filter(
-            TimesheetEntry.date < cutoff_date,
-            TimesheetEntry.status == 'pending',
-            TimesheetEntry.is_locked == False,
-            TimesheetEntry.is_absent == False
+        TimesheetEntry.user_id.in_(full_time_user_ids),
+        TimesheetEntry.date < cutoff_date,
+        TimesheetEntry.status == 'pending',
+        TimesheetEntry.is_locked == False,
+        TimesheetEntry.is_absent == False
         ).all()
         
         if not unfilled_entries:
@@ -192,6 +197,8 @@ def auto_mark_absent_for_locked_entries():
         results = []
         
         for user in users:
+            if user.employment_type != 'F':
+                continue
             try:
                 # ✅ GET ONLY LOCKED ENTRIES THAT ARE NOT ALREADY ABSENT
                 locked_entries = db.query(TimesheetEntry).filter(
@@ -400,8 +407,8 @@ def start_scheduler():
         scheduler.add_job(
             func=auto_lock_pending_entries,
             trigger='cron',
-            hour=11,        # 11:38 PM
-            minute=12,
+            hour=22,        # 11:38 PM
+            minute=45,
             id='auto_lock_pending_entries',
             replace_existing=True,
             max_instances=1,
@@ -412,8 +419,8 @@ def start_scheduler():
         scheduler.add_job(
             func=auto_mark_absent_for_locked_entries,
             trigger='cron',
-            hour=11,        # 11:39 PM
-            minute=13,      # 1 minute after auto-lock
+            hour=22,        # 11:39 PM
+            minute=46,      # 1 minute after auto-lock
             id='auto_mark_absent',
             replace_existing=True,
             max_instances=1,

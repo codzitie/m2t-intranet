@@ -34,6 +34,7 @@ class CreateUserRequest(BaseModel):
     designation: str
     supervisor_id: str | None = None
     join_date: str | None = None
+    employment_type: str | None = None
 
 class UserResponse(BaseModel):
     id: str
@@ -44,6 +45,7 @@ class UserResponse(BaseModel):
     designation: str
     supervisor_id: str | None
     join_date: str
+    employment_type: str | None = None
 
 class UserCreationRequestResponse(BaseModel):
     id: str
@@ -173,6 +175,7 @@ class UpdateUserRequest(BaseModel):
     designation: str
     supervisor_id: str | None = None
     join_date: str | None = None
+    employment_type: str | None = None
 
 @router.put("/users/{user_id}", response_model=UserResponse)
 def update_user(
@@ -181,33 +184,32 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """Update user details by ID (Admin only)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-
-    # Check if email is used by another user
+    
     email_user = db.query(User).filter(User.email == data.email, User.id != user_id).first()
     if email_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already in use by another user"
         )
-
+    
     user.name = data.name
     user.email = data.email
     user.role = data.role
     user.department = data.department
     user.designation = data.designation
-    user.supervisor_id = data.supervisor_id
+    user.supervisor_id = data.supervisor_id or None
     if data.join_date:
         user.join_date = datetime.strptime(data.join_date, '%Y-%m-%d').date()
+    user.employment_type = data.employment_type  # << Added here
     db.commit()
     db.refresh(user)
-
+    
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -216,7 +218,8 @@ def update_user(
         department=user.department or "",
         designation=user.designation or "",
         supervisor_id=user.supervisor_id,
-        join_date=str(user.join_date)
+        join_date=str(user.join_date),
+        employment_type=user.employment_type
     )
 
 # ============= UTILITY =============
@@ -280,7 +283,7 @@ def create_user_request(
                 detail="Supervisor not found"
             )
     
-    # Create user creation request
+    # Create user creation request with employment_type
     request = UserCreationRequest(
         id=str(uuid.uuid4()),
         requested_by=current_user.id,
@@ -292,6 +295,7 @@ def create_user_request(
         designation=data.designation,
         supervisor_id=data.supervisor_id,
         join_date=datetime.strptime(data.join_date, '%Y-%m-%d').date() if data.join_date else date.today(),
+        employment_type=data.employment_type,
         status='pending'
     )
     
@@ -390,9 +394,8 @@ def review_user_creation_request(
     request.rejection_remarks = review.remarks
     request.updated_at = datetime.utcnow()
     
-    # If approved, create the actual user
+    # If approved, create the actual user with employment_type
     if review.status == 'approved':
-        # Check email doesn't exist (double-check)
         existing_user = db.query(User).filter(User.email == request.email).first()
         if existing_user:
             raise HTTPException(
@@ -400,10 +403,8 @@ def review_user_creation_request(
                 detail="Email already registered"
             )
         
-        # Generate password
         temporary_password = generate_secure_password(12)
         
-        # Create user
         new_user = User(
             id=str(uuid.uuid4()),
             email=request.email,
@@ -413,14 +414,14 @@ def review_user_creation_request(
             department=request.department,
             designation=request.designation,
             supervisor_id=request.supervisor_id,
-            join_date=request.join_date
+            join_date=request.join_date,
+            employment_type=request.employment_type  # << Added here
         )
         
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
         
-        # Create leave balances
         leave_types = db.query(LeaveType).filter(LeaveType.is_active == True).all()
         for leave_type in leave_types:
             balance = LeaveBalance(
@@ -435,7 +436,6 @@ def review_user_creation_request(
         
         db.commit()
         
-        # Send welcome email
         try:
             send_new_user_credentials(
                 email=new_user.email,
@@ -489,6 +489,7 @@ def get_all_users(
             department=user.department or "",
             designation=user.designation or "",
             supervisor_id=user.supervisor_id,
+            employment_type=user.employment_type,
             join_date=str(user.join_date)
         )
         for user in users

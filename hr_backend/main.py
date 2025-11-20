@@ -139,6 +139,7 @@ def register_user(data: RegisterRequest, db: Session = Depends(get_db)):
         department=new_user.department,
         designation=new_user.designation,
         supervisor_id=new_user.supervisor_id,
+        employment_type=new_user.employment_type,
         permissions=get_user_permissions(new_user.role)
     )
 
@@ -177,6 +178,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             department=user.department,
             designation=user.designation,
             supervisor_id=user.supervisor_id,
+            employment_type=user.employment_type, 
             permissions=get_user_permissions(user.role)
         )
     )
@@ -193,6 +195,7 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         department=current_user.department,
         designation=current_user.designation,
         supervisor_id=current_user.supervisor_id,
+        employment_type=current_user.employment_type,
         permissions=get_user_permissions(current_user.role),
         last_login=current_user.last_login.isoformat() if current_user.last_login else None
     )
@@ -778,6 +781,7 @@ def get_all_employees(
             department=user.department,
             designation=user.designation,
             supervisor_id=user.supervisor_id,
+            employment_type=user.employment_type, 
             permissions=get_user_permissions(user.role)
         ))
     

@@ -47,6 +47,8 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user")
     last_login = Column(DateTime, default=None, nullable=True)
     prev_login = Column(DateTime, default=None, nullable=True)
+    employment_type = Column(String(20), nullable=True)  # 'F', 'P', or 'V'
+
 
 
 
@@ -103,7 +105,7 @@ class LeaveApplication(Base):
     leave_type = relationship("LeaveType", back_populates="leave_applications")
     approver = relationship("User", foreign_keys=[approved_by])
 
-
+ 
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -212,6 +214,7 @@ class UserCreationRequest(Base):
     designation = Column(String)
     supervisor_id = Column(String, ForeignKey('users.id'))
     join_date = Column(Date)    
+    employment_type = Column(String(20)) 
     
     # Approval workflow
     status = Column(String, default='pending')

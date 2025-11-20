@@ -103,7 +103,8 @@ export default function UserList() {
       department: user.department || '',
       designation: user.designation || '',
       supervisor_id: user.supervisor_id || '',
-      join_date: user.join_date || ''
+      join_date: user.join_date || '',
+      employment_type: user.employment_type || 'F', 
     });
   };
 
@@ -119,6 +120,10 @@ export default function UserList() {
   const submitEdit = async () => {
     try {
       const token = localStorage.getItem('token');
+      const payload = {
+      ...editFormData,
+      supervisor_id: editFormData.supervisor_id || null  // Convert empty string to null
+    };
       await axios.put(`http://localhost:8000/api/admin/users/${editingUser.id}`, editFormData, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -245,6 +250,7 @@ export default function UserList() {
                   <TableHeader>Designation</TableHeader>
                   <TableHeader>Department</TableHeader>
                   <TableHeader>Reporting Manager</TableHeader>
+                  <TableHeader>Employment Type</TableHeader>
                   <TableHeader>Join Date</TableHeader>
                   <TableHeader>Actions</TableHeader>
                 </tr>
@@ -306,6 +312,7 @@ export default function UserList() {
                     <TableCell>{user.designation || '-'}</TableCell>
                     <TableCell>{user.department || '-'}</TableCell>
                     <TableCell>{getSupervisorName(user.supervisor_id)}</TableCell>
+                    <TableCell>{user.employment_type || '-'}</TableCell>
                     <TableCell>{new Date(user.join_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</TableCell>
                     <TableCell>
                       <button onClick={() => openEditUser(user)} style={{
@@ -519,6 +526,30 @@ export default function UserList() {
                 ))}
               </select>
             </div>
+
+            <div style={{ marginBottom: '20px' }}>
+  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151' }}>
+    Employment Type
+  </label>
+  <select
+    name="employment_type"
+    value={editFormData.employment_type}
+    onChange={handleEditChange}
+    style={{
+      width: '100%',
+      padding: '10px 12px',
+      border: '1px solid #d1d5db',
+      borderRadius: '8px',
+      fontSize: '14px',
+      background: '#fff'
+    }}
+  >
+    <option value="F">Full-time</option>
+    <option value="P">Part-time</option>
+    <option value="V">Variable pay</option>
+  </select>
+</div>
+
 
             <FormField label="Join Date" name="join_date" type="date" value={editFormData.join_date} onChange={handleEditChange} />
 

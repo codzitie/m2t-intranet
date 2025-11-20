@@ -9,7 +9,8 @@ export default function CreateUser({ onSuccess }) {
     department: '',
     designation: '',
     supervisor_id: '',
-    join_date: new Date().toISOString().split('T')[0]
+    join_date: new Date().toISOString().split('T')[0],
+    employment_type: 'F', 
   });
   
   const [supervisors, setSupervisors] = useState([]);
@@ -262,6 +263,23 @@ export default function CreateUser({ onSuccess }) {
             placeholder="Software Developer"
             required
           />
+
+           <div style={{ marginBottom: '20px' }}>
+    <label /* label styles */>
+      Employment Type <span style={{ color: '#ef4444' }}>*</span>
+    </label>
+    <select
+      name="employment_type"
+      value={formData.employment_type}
+      onChange={handleChange}
+      required
+      style={{ /* select styles */ }}
+    >
+      <option value="F">Full-time</option>
+      <option value="P">Part-time</option>
+      <option value="V">Variable pay</option>
+    </select>
+  </div>
 
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
